@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+build/
+dist/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Testing & Cache
+.pytest_cache/
+.coverage
+htmlcov/
+.qodo/
+
+# Node & Frontend dependencies
+frontend/node_modules/
+frontend/dist/
+.npm/
+
+# Scratch & temporary logs
+*.log
+scratch/
