@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
+import { AiSettingsModal } from './components/AiSettingsModal';
 import { DashboardPage } from './pages/DashboardPage';
 import { BirdseyePage } from './pages/BirdseyePage';
 import { HunterPage } from './pages/HunterPage';
 import { PlaygroundPage } from './pages/PlaygroundPage';
 import { MOCK_TRACE_SESSION } from './data/mockData';
-import type { TraceSession, ThemeMode } from './types';
+import type { TraceSession, ThemeMode, AIProviderConfig } from './types';
 
 export const App: React.FC = () => {
   const [theme, setTheme] = useState<ThemeMode>(() => {
@@ -14,6 +15,8 @@ export const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<'dashboard' | 'birdseye' | 'hunter' | 'playground'>('dashboard');
   const [session, setSession] = useState<TraceSession>(MOCK_TRACE_SESSION);
   const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
+  const [aiConfig, setAiConfig] = useState<AIProviderConfig | null>(null);
   const [activeFileInfo, setActiveFileInfo] = useState<{ fileName: string; funcName: string }>({
     fileName: 'my_script.py',
     funcName: 'calculate_order_total',
@@ -33,6 +36,27 @@ export const App: React.FC = () => {
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
+
+  // Fetch initial AI provider config
+  useEffect(() => {
+    const fetchAiConfig = async () => {
+      try {
+        const res = await fetch('/api/ai/config');
+        if (res.ok) {
+          const cfg: AIProviderConfig = await res.json();
+          setAiConfig(cfg);
+        }
+      } catch (e) {
+        // Fallback default
+        setAiConfig({
+          provider: 'ollama',
+          base_url: 'http://127.0.0.1:11434',
+          model: 'qwen2.5:7b-instruct',
+        });
+      }
+    };
+    fetchAiConfig();
+  }, []);
 
   // Fetch initial session and subscribe to SSE stream
   useEffect(() => {
@@ -112,7 +136,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="h-screen w-screen flex flex-col overflow-hidden bg-slate-50 dark:bg-[#090d16] text-slate-900 dark:text-slate-100 transition-colors">
+    <div className="h-screen w-screen flex flex-col overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors">
       <Navbar
         theme={theme}
         onToggleTheme={toggleTheme}
@@ -127,6 +151,8 @@ export const App: React.FC = () => {
         sessionId={session.id}
         activeFileName={activeFileInfo.fileName}
         activeFunctionName={activeFileInfo.funcName}
+        aiConfig={aiConfig}
+        onOpenAiSettings={() => setIsAiModalOpen(true)}
       />
 
       <main className="flex-1 flex flex-col overflow-hidden">
@@ -145,6 +171,8 @@ export const App: React.FC = () => {
           <HunterPage
             session={session}
             onEventChange={(fileName, funcName) => setActiveFileInfo({ fileName, funcName })}
+            aiConfig={aiConfig}
+            onOpenAiSettings={() => setIsAiModalOpen(true)}
           />
         )}
         {currentPage === 'playground' && (
@@ -165,6 +193,13 @@ export const App: React.FC = () => {
           />
         )}
       </main>
+
+      {/* Modern AI Co-Pilot Provider Configuration Modal */}
+      <AiSettingsModal
+        isOpen={isAiModalOpen}
+        onClose={() => setIsAiModalOpen(false)}
+        onConfigSaved={(updated) => setAiConfig(updated)}
+      />
     </div>
   );
 };

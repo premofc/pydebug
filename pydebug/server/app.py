@@ -25,6 +25,7 @@ if sys.platform == "win32":
 from pydebug.core.events import TraceSession
 from pydebug.core.tracer import PyTracer, safe_repr
 from pydebug.examples.demo_algorithms import evaluate_claim_rules, compute_risk_score
+from pydebug.server.ai import get_ai_manager
 
 UI_DIR = Path(__file__).resolve().parents[1] / "ui"
 DEFAULT_UI_HTML = UI_DIR / "index.html"
@@ -32,10 +33,7 @@ mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
 mimetypes.add_type("image/svg+xml", ".svg")
 
-OLLAMA_ENDPOINT = os.environ.get("OLLAMA_BASE_URL", "http://172.30.0.3:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b-instruct")
-
-_AI_EXPLANATION_CACHE: dict[str, dict[str, Any]] = {}
+# Dynamic AI configuration managed by pydebug.server.ai.AIManager
 
 
 class SessionManager:
@@ -156,75 +154,6 @@ def extract_function_signatures(file_path: str) -> list[dict[str, Any]]:
     return funcs
 
 
-def call_ollama_explanation(
-    func: str,
-    line: int,
-    src: str,
-    vars_dict: dict[str, str],
-    diffs_dict: dict[str, Any],
-    expressions: list[dict[str, Any]],
-    prompt_type: str = "explain",
-) -> dict[str, str]:
-    cache_key = hashlib.md5(
-        f"{func}:{line}:{src}:{sorted(vars_dict.items())}:{prompt_type}".encode()
-    ).hexdigest()
-
-    if cache_key in _AI_EXPLANATION_CACHE:
-        res = dict(_AI_EXPLANATION_CACHE[cache_key])
-        res["cached"] = True
-        return res
-
-    expr_summary = ", ".join(f"{e.get('text')} = {e.get('val')}" for e in expressions[:5])
-    diff_summary = ", ".join(
-        f"{k}: {v.get('old')} -> {v.get('new')}" for k, v in diffs_dict.items()
-    )
-
-    prompt = f"""You are an expert Python debugger and execution engine assistant.
-Function: {func}()
-Current Line {line}: {src}
-Active variables in scope: {json.dumps(vars_dict)}
-Line variable mutations: {diff_summary or 'None'}
-Evaluated AST sub-expressions: {expr_summary or 'None'}
-
-In 2 clear, concise sentences:
-1. Explain what this line does right now with these exact runtime variable values and what branch was taken.
-2. Give one practical tip, edge case, or code alteration suggestion.
-
-Respond ONLY with valid JSON having the keys 'explanation' and 'suggestion'."""
-
-    payload = json.dumps({
-        "model": OLLAMA_MODEL,
-        "prompt": prompt,
-        "stream": False,
-        "format": "json",
-        "options": {"temperature": 0.2, "num_predict": 140},
-    }).encode("utf-8")
-
-    try:
-        req = urllib.request.Request(
-            f"{OLLAMA_ENDPOINT}/api/generate",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=12) as response:
-            raw = json.loads(response.read().decode("utf-8"))
-            parsed_resp = json.loads(raw.get("response", "{}"))
-            result = {
-                "explanation": parsed_resp.get("explanation", f"Executed line {line}: {src}"),
-                "suggestion": parsed_resp.get("suggestion", "Verify variable bounds and edge conditions."),
-                "cached": False,
-            }
-            _AI_EXPLANATION_CACHE[cache_key] = result
-            return result
-    except Exception as exc:
-        fallback = {
-            "explanation": f"Line {line} in {func}() evaluated with variables {list(vars_dict.keys())[:4]}.",
-            "suggestion": f"Ollama connection note: {exc}",
-            "cached": False,
-        }
-        return fallback
-
-
 class PyDebugHandler(BaseHTTPRequestHandler):
     """HTTP Request Handler serving PyDebug Studio, REST endpoints, and Ollama AI."""
 
@@ -247,6 +176,13 @@ class PyDebugHandler(BaseHTTPRequestHandler):
             self._serve_functions()
         elif path == "/api/stream":
             self._serve_sse_stream()
+        elif path == "/api/ai/config":
+            self._serve_ai_config()
+        elif path == "/api/ai/models":
+            query = urllib.parse.parse_qs(parsed.query)
+            prov = query.get("provider", [None])[0]
+            base_url = query.get("base_url", [None])[0]
+            self._serve_ai_models(prov, base_url)
         elif path == "/api/health":
             self._send_json(200, json.dumps({"status": "ok", "service": "pydebug"}).encode("utf-8"))
         elif self._try_serve_static(path):
@@ -264,6 +200,10 @@ class PyDebugHandler(BaseHTTPRequestHandler):
             self._handle_execute_function()
         elif path == "/api/simulate-request":
             self._handle_simulate_request()
+        elif path == "/api/ai/config":
+            self._handle_save_ai_config()
+        elif path == "/api/ai/test-connection":
+            self._handle_test_ai_connection()
         elif path == "/api/ai/explain-line":
             self._handle_ai_explain_line()
         else:
@@ -463,6 +403,49 @@ class PyDebugHandler(BaseHTTPRequestHandler):
             err = json.dumps({"error": str(e)}).encode("utf-8")
             self._send_json(400, err)
 
+    def _serve_ai_config(self) -> None:
+        mgr = get_ai_manager()
+        body = json.dumps(mgr.config.to_public_dict()).encode("utf-8")
+        self._send_json(200, body)
+
+    def _serve_ai_models(self, provider: str | None, base_url: str | None) -> None:
+        mgr = get_ai_manager()
+        models = mgr.fetch_models(provider=provider, base_url=base_url)
+        body = json.dumps({"models": models}).encode("utf-8")
+        self._send_json(200, body)
+
+    def _handle_save_ai_config(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            mgr = get_ai_manager()
+            updated = mgr.save_config(
+                provider=payload.get("provider", "ollama"),
+                base_url=payload.get("base_url", "http://127.0.0.1:11434"),
+                model=payload.get("model", "qwen2.5:7b-instruct"),
+                api_key=payload.get("api_key"),
+                temperature=float(payload.get("temperature", 0.2)),
+            )
+            self._send_json(200, json.dumps({"ok": True, "config": updated.to_public_dict()}).encode("utf-8"))
+        except Exception as e:
+            self._send_json(400, json.dumps({"error": str(e)}).encode("utf-8"))
+
+    def _handle_test_ai_connection(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            payload = json.loads(self.rfile.read(length).decode("utf-8")) if length > 0 else {}
+            mgr = get_ai_manager()
+            res = mgr.test_connection(
+                provider=payload.get("provider"),
+                base_url=payload.get("base_url"),
+                model=payload.get("model"),
+                api_key=payload.get("api_key"),
+            )
+            status_code = 200 if res.get("success") else 400
+            self._send_json(status_code, json.dumps(res).encode("utf-8"))
+        except Exception as e:
+            self._send_json(500, json.dumps({"success": False, "message": str(e)}).encode("utf-8"))
+
     def _handle_ai_explain_line(self) -> None:
         try:
             length = int(self.headers.get("Content-Length", 0))
@@ -476,7 +459,8 @@ class PyDebugHandler(BaseHTTPRequestHandler):
             expressions = payload.get("expressions", [])
             prompt_type = payload.get("prompt_type", "explain")
 
-            result = call_ollama_explanation(
+            mgr = get_ai_manager()
+            result = mgr.explain_line(
                 func=func,
                 line=line,
                 src=src,
@@ -537,7 +521,8 @@ def serve_trace(
     server = ThreadingHTTPServer(("0.0.0.0", port), PyDebugHandler)
     url = f"http://127.0.0.1:{port}"
     print(f"\n[PyDebug] Live Studio online: {url}")
-    print(f"[PyDebug] AI Live Suggestions: connected to Ollama ({OLLAMA_MODEL}) at {OLLAMA_ENDPOINT}")
+    ai = get_ai_manager()
+    print(f"[PyDebug] AI Co-Pilot: Provider={ai.config.provider.upper()}, Model={ai.config.model} ({ai.config.base_url})")
 
     if auto_open:
         try:

@@ -94,3 +94,39 @@ def test_session_json_serialization():
     assert len(data["events"]) == 1
     encoded = session.to_json()
     assert "JSON Test" in encoded
+
+
+def test_ai_manager_config_presets():
+    from pydebug.server.ai import AIManager, DEFAULT_PRESETS
+
+    mgr = AIManager()
+    assert "ollama" in DEFAULT_PRESETS
+    assert "openai" in DEFAULT_PRESETS
+    assert "deepseek" in DEFAULT_PRESETS
+    assert "custom" in DEFAULT_PRESETS
+
+    # Verify public dict masking
+    mgr.save_config(provider="openai", base_url="https://api.openai.com/v1", model="gpt-4o", api_key="sk-test-secret-12345")
+    pub = mgr.config.to_public_dict()
+    assert pub["provider"] == "openai"
+    assert pub["has_api_key"] is True
+    assert "sk-test-secret-12345" not in pub["api_key_masked"]
+    assert pub["api_key_masked"].startswith("sk-t")
+
+
+def test_ai_manager_explanation_graceful_fallback():
+    from pydebug.server.ai import AIManager
+
+    mgr = AIManager()
+    mgr.save_config(provider="ollama", base_url="http://127.0.0.1:99999", model="nonexistent:model")
+    result = mgr.explain_line(
+        func="my_test_fn",
+        line=12,
+        src="total = price * 1.2",
+        vars_dict={"price": "100"},
+        diffs_dict={},
+        expressions=[{"text": "price * 1.2", "val": "120.0"}],
+    )
+    assert "explanation" in result
+    assert "suggestion" in result
+    assert result["provider"] == "ollama"

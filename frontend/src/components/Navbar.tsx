@@ -11,9 +11,10 @@ import {
   FlaskConical,
   LayoutDashboard,
   CheckCircle2,
-  Copy
+  Copy,
+  Bot
 } from 'lucide-react';
-import type { ThemeMode } from '../types';
+import type { ThemeMode, AIProviderConfig } from '../types';
 
 interface NavbarProps {
   theme: ThemeMode;
@@ -29,6 +30,8 @@ interface NavbarProps {
   sessionId: string;
   activeFileName?: string;
   activeFunctionName?: string;
+  aiConfig?: AIProviderConfig | null;
+  onOpenAiSettings?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -40,7 +43,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   isConnected,
   sessionId,
   activeFileName,
-  activeFunctionName
+  activeFunctionName,
+  aiConfig,
+  onOpenAiSettings,
 }) => {
   const [copied, setCopied] = React.useState(false);
 
@@ -58,7 +63,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   ];
 
   return (
-    <header className="h-14 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/95 dark:bg-[#080d19]/95 backdrop-blur-md px-4 flex items-center justify-between select-none z-40 sticky top-0 transition-all">
+    <header className="h-14 border-b border-slate-200/80 dark:border-white/[0.08] bg-white/95 dark:bg-[#080d19]/95 backdrop-blur-md px-4 flex items-center justify-between select-none z-40 sticky top-0 transition-all">
       {/* Brand & Active Context */}
       <div className="flex items-center gap-3">
         {/* Brand Logo */}
@@ -80,13 +85,13 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        <div className="h-5 w-[1px] bg-slate-200 dark:bg-slate-800" />
+        <div className="h-5 w-[1px] bg-slate-200 dark:border-white/[0.08]" />
 
         {/* Live SSE Status Pill */}
         <div 
           onClick={copySessionId}
           title="Click to copy session ID"
-          className="flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-mono bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-indigo-500/50 cursor-pointer transition-all shadow-xs"
+          className="flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-mono bg-slate-100/90 dark:bg-[#050811] border border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:border-indigo-500/50 cursor-pointer transition-all shadow-xs"
         >
           <span className="relative flex h-2 w-2">
             {isConnected && (
@@ -105,12 +110,12 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Active Trace File Breadcrumb */}
         {activeFileName && (
-          <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-mono bg-slate-50 dark:bg-slate-900/40 px-2.5 py-1 rounded-md border border-slate-200/60 dark:border-slate-800/60">
+          <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-mono bg-slate-50 dark:bg-[#050811]/60 px-2.5 py-1 rounded-md border border-slate-200/60 dark:border-white/[0.08]">
             <FileCode className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
             <span className="text-slate-800 dark:text-slate-200 font-medium">{activeFileName}</span>
             {activeFunctionName && (
               <>
-                <span className="text-slate-400">›</span>
+                <span className="text-slate-400">/</span>
                 <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
                   {activeFunctionName}()
                 </span>
@@ -121,7 +126,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       {/* Center: Segmented Navigation Pill */}
-      <nav aria-label="Mode Switcher" className="flex items-center bg-slate-100/90 dark:bg-[#0f172a] p-1 rounded-xl border border-slate-200 dark:border-slate-800/80 shadow-xs">
+      <nav aria-label="Mode Switcher" className="flex items-center bg-slate-100/90 dark:bg-[#050811] p-1 rounded-xl border border-slate-200 dark:border-white/[0.08] shadow-xs">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.id;
@@ -150,17 +155,32 @@ export const Navbar: React.FC<NavbarProps> = ({
         })}
       </nav>
 
-      {/* Right: Metrics, GitHub & Controls */}
-      <div className="flex items-center gap-3">
+      {/* Right: Metrics, AI Settings, GitHub & Controls */}
+      <div className="flex items-center gap-2.5">
+        {/* AI Provider Config Pill */}
+        <button
+          onClick={onOpenAiSettings}
+          title={`Active AI: ${aiConfig?.provider || 'Ollama'} (${aiConfig?.model || 'qwen2.5:7b-instruct'}) - Click to configure LLMs`}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono bg-slate-100/90 dark:bg-[#050811] hover:bg-slate-200 dark:hover:bg-indigo-950/40 border border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-200 hover:border-indigo-500/50 transition-all cursor-pointer shadow-xs group"
+        >
+          <Bot className="w-3.5 h-3.5 text-indigo-500 group-hover:scale-110 transition-transform" />
+          <span className="font-sans text-[11px] font-medium capitalize">
+            {aiConfig?.provider || 'Ollama'}
+          </span>
+          <span className="text-[10px] text-slate-400 font-mono truncate max-w-[85px] hidden md:inline">
+            {aiConfig?.model ? aiConfig.model.split(':')[0] : 'qwen2.5'}
+          </span>
+        </button>
+
         {/* Real-time Metrics Pill */}
-        <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-slate-600 dark:text-slate-300">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800">
-            <Activity className="w-3.5 h-3.5 text-indigo-500" />
+        <div className="hidden sm:flex items-center gap-1.5 text-xs font-mono text-slate-600 dark:text-slate-300">
+          <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100/80 dark:bg-[#050811] border border-slate-200 dark:border-white/[0.08]">
+            <Activity className="w-3 h-3 text-indigo-500" />
             <span className="font-semibold text-slate-800 dark:text-slate-200">{stats.total_events}</span>
-            <span className="text-[10px] text-slate-400 font-sans">events</span>
+            <span className="text-[10px] text-slate-400 font-sans">ev</span>
           </div>
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800">
-            <Clock className="w-3.5 h-3.5 text-emerald-500" />
+          <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100/80 dark:bg-[#050811] border border-slate-200 dark:border-white/[0.08]">
+            <Clock className="w-3 h-3 text-emerald-500" />
             <span className="font-semibold text-slate-800 dark:text-slate-200">{stats.duration_ms.toFixed(1)}</span>
             <span className="text-[10px] text-slate-400 font-sans">ms</span>
           </div>
@@ -173,7 +193,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           href="https://github.com/premofc/pydebug"
           target="_blank"
           rel="noopener noreferrer"
-          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800/80 transition-colors shadow-xs"
+          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-white/[0.08] transition-colors shadow-xs"
           title="View PyDebug on GitHub"
         >
           <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
@@ -185,7 +205,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <button
           onClick={onToggleTheme}
           aria-label="Toggle theme"
-          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800/80 transition-colors shadow-xs"
+          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-white/[0.08] transition-colors shadow-xs"
           title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} mode`}
         >
           {theme === 'dark' ? (

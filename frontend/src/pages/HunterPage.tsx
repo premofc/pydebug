@@ -21,14 +21,16 @@ import {
   Lightbulb,
   ShieldAlert
 } from 'lucide-react';
-import type { TraceSession, TraceEvent, AiExplanation } from '../types';
+import type { TraceSession, TraceEvent, AiExplanation, AIProviderConfig } from '../types';
 
 interface HunterPageProps {
   session: TraceSession;
   onEventChange?: (fileName: string, funcName: string) => void;
+  aiConfig?: AIProviderConfig | null;
+  onOpenAiSettings?: () => void;
 }
 
-export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange }) => {
+export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, aiConfig, onOpenAiSettings }) => {
   const events = session.events || [];
   const [currentIdx, setCurrentIdx] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -119,7 +121,7 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange }
     } catch (err) {
       setAiExplanation({
         explanation: `Line ${currentEvent.line} executed in ${currentEvent.func}().`,
-        suggestion: 'Could not connect to Ollama at 172.30.0.3.',
+        suggestion: `Unable to query ${aiConfig?.provider || 'AI'} provider. Click 'Configure AI' to verify your connection and settings.`,
       });
     } finally {
       setAiLoading(false);
@@ -710,28 +712,42 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange }
             </div>
           )}
 
-          {/* TAB 2: AI CO-PILOT (Connected to Ollama at 172.30.0.3) */}
+          {/* TAB 2: AI CO-PILOT (Multi-Provider: Ollama, OpenAI, DeepSeek, Custom) */}
           {activeTab === 'ai' && (
             <div className="flex-1 flex flex-col p-4 overflow-y-auto space-y-3">
               <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-white/[0.08]">
                 <div className="flex items-center gap-2">
                   <Bot className="w-4 h-4 text-indigo-500 animate-pulse" />
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                    Live Ollama Co-Pilot
+                    AI Co-Pilot
                   </span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
-                    172.30.0.3:11434
+                  <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 capitalize">
+                    {aiConfig?.provider || 'Ollama'}
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-400 hidden sm:inline">
+                    {aiConfig?.model || 'qwen2.5:7b-instruct'}
                   </span>
                 </div>
 
-                <button
-                  onClick={() => fetchAiExplanation('explain')}
-                  disabled={aiLoading}
-                  className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                  title="Re-analyze current line"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${aiLoading ? 'animate-spin' : ''}`} />
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {onOpenAiSettings && (
+                    <button
+                      onClick={onOpenAiSettings}
+                      className="px-2 py-0.5 rounded text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 transition-colors"
+                      title="Configure AI Provider & Model"
+                    >
+                      Configure AI
+                    </button>
+                  )}
+                  <button
+                    onClick={() => fetchAiExplanation('explain')}
+                    disabled={aiLoading}
+                    className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Re-analyze current line"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${aiLoading ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
               </div>
 
               {/* Current Target Line Box */}

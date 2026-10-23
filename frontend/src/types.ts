@@ -87,7 +87,25 @@ export interface FunctionSignature {
 export interface AiExplanation {
   explanation: string;
   suggestion: string;
+  provider?: string;
+  model?: string;
   cached?: boolean;
+}
+
+export interface AIProviderConfig {
+  provider: 'ollama' | 'openai' | 'deepseek' | 'custom';
+  base_url: string;
+  model: string;
+  temperature?: number;
+  has_api_key?: boolean;
+  api_key_masked?: string;
+}
+
+export interface AIConnectionResult {
+  success: boolean;
+  latency_ms: number;
+  message: string;
+  models?: string[];
 }
 
 export interface TestCase {
