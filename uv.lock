@@ -607,12 +607,6 @@ fastapi = [
     { name = "uvicorn", version = "0.54.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
-    { name = "pytest", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "fastapi", marker = "extra == 'fastapi'" },
@@ -622,9 +616,6 @@ requires-dist = [
     { name = "uvicorn", marker = "extra == 'fastapi'" },
 ]
 provides-extras = ["fastapi", "dev"]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.4.2" }]
 
 [[package]]
 name = "pygments"

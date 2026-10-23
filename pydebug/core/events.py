@@ -1,4 +1,4 @@
-"""Data structures and event representations for PyDebug."""
+﻿"""Data structures and event representations for PyDebug."""
 from __future__ import annotations
 
 import datetime
@@ -50,7 +50,7 @@ class TraceSession:
     events: list[TraceEvent] = field(default_factory=list)
     stats: dict[str, Any] = field(default_factory=dict)
     _file_idx_cache: dict[str, int] = field(default_factory=dict, repr=False)
-    _last_vars: dict[str, str] = field(default_factory=dict, repr=False)
+    _last_vars_by_func: dict[str, dict[str, str]] = field(default_factory=dict, repr=False)
 
     def register_file(self, filename: str) -> int:
         clean_path = str(Path(filename).resolve())
@@ -84,8 +84,6 @@ class TraceSession:
 
         # Compute variable mutations scoped by function
         diffs: dict[str, dict[str, str]] = {}
-        if not hasattr(self, '_last_vars_by_func'):
-            self._last_vars_by_func = {}
         last_for_func = self._last_vars_by_func.get(func, {})
         for k, v in locals_dict.items():
             if k not in last_for_func:
@@ -165,3 +163,4 @@ class TraceSession:
 
     def to_json(self, indent: int | None = None) -> str:
         return json.dumps(self.to_dict(), indent=indent)
+
