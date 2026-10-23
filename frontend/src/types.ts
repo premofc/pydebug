@@ -82,6 +82,8 @@ export interface FunctionSignature {
   params: FunctionParam[];
   docstring: string;
   file_path: string;
+  sample_valid?: Record<string, any>;
+  sample_invalid?: Record<string, any>;
 }
 
 export interface AiExplanation {

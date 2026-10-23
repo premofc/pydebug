@@ -8,6 +8,7 @@ import queue
 import sys
 import threading
 import time
+import traceback
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -119,6 +120,64 @@ def infer_session_metadata(session: TraceSession) -> dict[str, Any]:
     }
 
 
+def generate_sample_args(func_name: str, params: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Generates verified (sample_valid, sample_invalid) argument presets for testing."""
+    if func_name == "compute_risk_score":
+        return (
+            {"age": 42, "bmi": 26.5, "smoker": False},
+            {"age": "forty-two", "bmi": 26.5, "smoker": False},
+        )
+    if func_name == "calculate_order_total":
+        return (
+            {
+                "items": [
+                    {"name": "Wireless Mechanical Keyboard", "price": 90.0, "qty": 1},
+                    {"name": "Ergonomic Gel Mousepad", "price": 25.0, "qty": 2},
+                ],
+                "discount_code": "VIP20",
+            },
+            {
+                "items": [{"name": "Faulty Item Without Price", "qty": 1}],
+                "discount_code": "INVALID_CODE_999",
+            },
+        )
+    if func_name == "divide_and_process":
+        return (
+            {"numerator": 120.0, "denominator": 4.0},
+            {"numerator": 120.0, "denominator": 0.0},
+        )
+    if func_name == "evaluate_claim_rules":
+        return (
+            {"claim_id": "CLM-1001", "amount": 4200.0, "risk_score": 1.25},
+            {"claim_id": "CLM-ERR", "amount": -850.0, "risk_score": 1.25},
+        )
+
+    valid: dict[str, Any] = {}
+    invalid: dict[str, Any] = {}
+    for p in params:
+        name = p["name"]
+        ann = (p.get("annotation") or "").lower()
+        if "list" in ann:
+            valid[name] = [{"id": 1, "name": "Sample Item", "price": 50.0}]
+            invalid[name] = "invalid_string_not_list"
+        elif "dict" in ann:
+            valid[name] = {"id": 1, "key": "value"}
+            invalid[name] = 12345
+        elif "int" in ann:
+            valid[name] = 25
+            invalid[name] = "invalid_int_string"
+        elif "float" in ann:
+            valid[name] = 19.99
+            invalid[name] = "invalid_float_string"
+        elif "bool" in ann:
+            valid[name] = True
+            invalid[name] = [1, 2, 3]
+        else:
+            valid[name] = "test_value"
+            invalid[name] = None
+    return valid, invalid
+
+
 def extract_function_signatures(file_path: str) -> list[dict[str, Any]]:
     p = Path(file_path).resolve()
     if not p.exists():
@@ -133,6 +192,8 @@ def extract_function_signatures(file_path: str) -> list[dict[str, Any]]:
     funcs: list[dict[str, Any]] = []
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name.startswith("_") or node.name == "run_demo":
+                continue
             params: list[dict[str, Any]] = []
             defaults: list[Any] = [None] * (len(node.args.args) - len(node.args.defaults)) + list(node.args.defaults)
             for arg, default in zip(node.args.args, defaults):
@@ -144,12 +205,15 @@ def extract_function_signatures(file_path: str) -> list[dict[str, Any]]:
                     "default": default_val,
                 })
             doc = ast.get_docstring(node) or ""
+            sample_valid, sample_invalid = generate_sample_args(node.name, params)
             funcs.append({
                 "name": node.name,
                 "line": node.lineno,
                 "params": params,
                 "docstring": doc.strip(),
                 "file_path": str(p),
+                "sample_valid": sample_valid,
+                "sample_invalid": sample_invalid,
             })
     return funcs
 
@@ -266,12 +330,25 @@ class PyDebugHandler(BaseHTTPRequestHandler):
     def _serve_functions(self) -> None:
         mgr = get_session_manager()
         sess = mgr.get_latest()
-        files = sess.files if sess else []
+        files: list[str] = list(sess.files) if sess and sess.files else []
+
+        demo_file = Path(__file__).resolve().parent.parent / "examples" / "demo_algorithms.py"
+        if demo_file.exists() and str(demo_file) not in files:
+            files.append(str(demo_file))
+
+        for p in Path.cwd().glob("*.py"):
+            if not p.name.startswith(".") and str(p) not in files:
+                files.append(str(p))
 
         discovered: list[dict[str, Any]] = []
+        seen = set()
         for f in files:
             funcs = extract_function_signatures(f)
-            discovered.extend(funcs)
+            for fn in funcs:
+                key = (fn["file_path"], fn["name"])
+                if key not in seen:
+                    seen.add(key)
+                    discovered.append(fn)
 
         body = json.dumps(discovered).encode("utf-8")
         self._send_json(200, body)
@@ -311,13 +388,26 @@ class PyDebugHandler(BaseHTTPRequestHandler):
             tracer.start()
 
             ret_val = None
+            error_type = None
             error_msg = None
+            error_tb = None
             try:
-                ret_val = target_func(**kwargs)
+                if isinstance(kwargs, dict):
+                    ret_val = target_func(**kwargs)
+                elif isinstance(kwargs, list):
+                    ret_val = target_func(*kwargs)
+                else:
+                    ret_val = target_func()
             except Exception as exc:
-                error_msg = str(exc)
+                error_type = type(exc).__name__
+                error_msg = str(exc) or error_type
+                error_tb = traceback.format_exc()
             finally:
                 tracer.stop()
+                session.compute_stats()
+
+            if error_msg:
+                session.stats["has_uncaught_error"] = True
 
             get_session_manager().add_session(session)
 
@@ -325,7 +415,10 @@ class PyDebugHandler(BaseHTTPRequestHandler):
                 "success": error_msg is None,
                 "session": session.to_dict(),
                 "return_val": safe_repr(ret_val),
-                "error": error_msg,
+                "error": f"{error_type}: {error_msg}" if error_type else None,
+                "error_type": error_type,
+                "error_message": error_msg,
+                "error_traceback": error_tb,
             }
             self._send_json(200, json.dumps(resp_data).encode("utf-8"))
 

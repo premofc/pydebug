@@ -130,3 +130,37 @@ def test_ai_manager_explanation_graceful_fallback():
     assert "explanation" in result
     assert "suggestion" in result
     assert result["provider"] == "ollama"
+
+
+def test_extract_function_signatures_and_presets():
+    from pydebug.server.app import extract_function_signatures
+    from pathlib import Path
+
+    demo_path = Path("pydebug/examples/demo_algorithms.py").resolve()
+    funcs = extract_function_signatures(str(demo_path))
+
+    func_names = [f["name"] for f in funcs]
+    assert "compute_risk_score" in func_names
+    assert "calculate_order_total" in func_names
+    assert "divide_and_process" in func_names
+
+    calc_fn = next(f for f in funcs if f["name"] == "calculate_order_total")
+    assert "sample_valid" in calc_fn
+    assert "sample_invalid" in calc_fn
+    assert calc_fn["sample_valid"]["discount_code"] == "VIP20"
+
+
+def test_function_execution_with_exception_capture():
+    from pydebug.examples.demo_algorithms import calculate_order_total, divide_and_process
+    import pytest
+
+    # Test valid execution
+    total = calculate_order_total([{"name": "Item A", "price": 100, "qty": 1}], discount_code="VIP20")
+    assert total > 0
+
+    # Test exception capture on wrong arguments
+    with pytest.raises(ValueError, match="Order must contain at least one item"):
+        calculate_order_total([], discount_code="VIP20")
+
+    with pytest.raises(ZeroDivisionError, match="Denominator cannot be zero"):
+        divide_and_process(100.0, 0.0)
