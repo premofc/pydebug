@@ -86,11 +86,20 @@ class PyTracer:
         if not filename or filename.startswith("<"):
             return False
         abs_file = os.path.abspath(filename)
+        norm = abs_file.replace("\\", "/").lower()
+
+        # Strict hard exclusions: NEVER trace virtualenvs, site-packages, or python runtime libs
+        if "/site-packages/" in norm or "/.venv/" in norm or "/venv/" in norm:
+            return False
+        if "/python3" in norm or "/lib/python" in norm:
+            return False
+        if "uvicorn" in norm or "starlette" in norm or "anyio" in norm:
+            return False
+
         for excl in self.exclude_prefixes:
             if abs_file.startswith(excl):
-                # If explicit include_paths given and matches, override exclusion
-                if not any(abs_file.startswith(inc) for inc in self.include_paths):
-                    return False
+                return False
+
         if self.include_paths:
             return any(abs_file.startswith(inc) for inc in self.include_paths)
         return True

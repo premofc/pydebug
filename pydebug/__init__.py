@@ -29,18 +29,16 @@ __all__ = [
 ]
 
 
-def enable(server_port: int = 8899) -> None:
-    """Zero-code global debugger activation.
+def enable(server_port: int = 8899, auto_trace_scripts: bool = False) -> None:
+    """Activates PyDebug integration safely without intercepting MCP or test runners.
     
-    Automatically instruments both:
-    1. Standalone scripts (via global line tracer)
-    2. ASGI/FastAPI/Starlette/MCP servers (via auto-injected PyDebugMiddleware)
-    
-    Streams all traces live to PyDebug Studio at http://127.0.0.1:{server_port}.
+    1. Attaches PyDebugMiddleware to Starlette/FastAPI applications (bypassing /mcp and SSE streams).
+    2. Only starts standalone script tracer if auto_trace_scripts=True.
     """
+    import sys
     from pathlib import Path
     
-    # 1. Auto-patch Starlette / FastAPI for live API & MCP server requests
+    # Auto-patch Starlette / FastAPI for live API requests
     try:
         from starlette.applications import Starlette
         from pydebug.integrations.fastapi import PyDebugMiddleware
@@ -60,31 +58,32 @@ def enable(server_port: int = 8899) -> None:
     except ImportError:
         pass
 
-    # 2. Start global tracer for standalone scripts
-    import atexit
-    cwd = str(Path.cwd().resolve())
-    tracer = PyTracer(include_paths=[cwd])
-    tracer.start()
+    # Only trace standalone script execution if explicitly requested
+    if auto_trace_scripts:
+        import atexit
+        cwd = str(Path.cwd().resolve())
+        tracer = PyTracer(include_paths=[cwd])
+        tracer.start()
 
-    def _on_exit() -> None:
-        try:
-            sess = tracer.stop()
-            if not sess.events:
-                return
-            sess.title = f"Script: {Path(sys.argv[0]).name if sys.argv else 'Python'}"
-            sess.compute_stats()
-            import json
-            import urllib.request
-            payload = json.dumps(sess.to_dict()).encode("utf-8")
-            req = urllib.request.Request(
-                f"http://127.0.0.1:{server_port}/api/sessions",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=1.0):
+        def _on_exit() -> None:
+            try:
+                sess = tracer.stop()
+                if not sess.events:
+                    return
+                sess.title = f"Script: {Path(sys.argv[0]).name if sys.argv else 'Python'}"
+                sess.compute_stats()
+                import json
+                import urllib.request
+                payload = json.dumps(sess.to_dict()).encode("utf-8")
+                req = urllib.request.Request(
+                    f"http://127.0.0.1:{server_port}/api/sessions",
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=1.0):
+                    pass
+            except Exception:
                 pass
-        except Exception:
-            pass
 
-    atexit.register(_on_exit)
+        atexit.register(_on_exit)

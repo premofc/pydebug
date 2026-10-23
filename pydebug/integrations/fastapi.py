@@ -26,10 +26,21 @@ class PyDebugMiddleware:
         prefix_filter: str | None = None,
         exclude_paths: list[str] | None = None,
         server_port: int = 8899,
+        trace_mcp: bool = False,
     ) -> None:
         self.app = app
         self.prefix_filter = prefix_filter
-        self.exclude_paths = exclude_paths or ["/favicon.ico", "/_pydebug"]
+        self.exclude_paths = exclude_paths or [
+            "/favicon.ico",
+            "/_pydebug",
+            "/health",
+            "/_health",
+            "/metrics",
+            "/docs",
+            "/redoc",
+            "/openapi.json",
+        ]
+        self.trace_mcp = trace_mcp
         self.server_port = server_port
         self.project_root = str(Path.cwd().resolve())
 
@@ -43,6 +54,13 @@ class PyDebugMiddleware:
             if path.startswith(excl):
                 await self.app(scope, receive, send)
                 return
+
+        # Bypass tracing on MCP protocol & SSE streaming channels to avoid inspector timeouts
+        headers = dict(scope.get("headers", []))
+        accept = headers.get(b"accept", b"").decode("latin-1", "ignore")
+        if "text/event-stream" in accept or (not self.trace_mcp and path.startswith("/mcp")):
+            await self.app(scope, receive, send)
+            return
 
         if self.prefix_filter and not path.startswith(self.prefix_filter):
             await self.app(scope, receive, send)

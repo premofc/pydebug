@@ -121,7 +121,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
 def cmd_install(args: argparse.Namespace) -> None:
     import site
     packages = [Path(p) for p in site.getsitepackages() if Path(p).name == "site-packages"]
-    pth_code = 'import os; os.getenv("ENABLE_PYDEBUG", "1") == "1" and __import__("pydebug").enable()\n'
+    pth_code = 'import os; os.getenv("ENABLE_PYDEBUG", "0") == "1" and __import__("pydebug").enable()\n'
     if packages:
         target = packages[0] / "pydebug_hook.pth"
         target.write_text(pth_code, encoding="utf-8")
