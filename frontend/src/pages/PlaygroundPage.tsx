@@ -233,9 +233,9 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-[#090d16] text-slate-900 dark:text-slate-100 select-none">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 select-none">
       {/* Top Banner */}
-      <div className="h-14 px-6 bg-white dark:bg-[#0c121e] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
+      <div className="h-14 px-6 bg-white dark:bg-[#090e1a]/90 border-b border-slate-200 dark:border-white/[0.08] flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-indigo-600/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center border border-indigo-500/30">
             <FlaskConical className="w-4 h-4" />
@@ -267,9 +267,9 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
       {/* Main Split Panels */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel: Function Selector & Argument Editor */}
-        <div className="w-1/2 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#090d16] overflow-hidden">
+        <div className="w-1/2 flex flex-col border-r border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#060911] overflow-hidden">
           {/* Function Selector Header */}
-          <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-[#0c121e]/50 flex items-center justify-between gap-3">
+          <div className="p-4 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50/50 dark:bg-[#090e1a]/90/50 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 flex-1">
               <Code2 className="w-4 h-4 text-indigo-500" />
               <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -281,7 +281,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                   const f = functions.find((x) => x.name === e.target.value);
                   if (f) handleSelectFunction(f);
                 }}
-                className="px-2.5 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:border-indigo-500"
+                className="px-2.5 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.08] text-xs font-mono font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:border-indigo-500"
               >
                 {functions.map((f) => (
                   <option key={f.name} value={f.name}>
@@ -302,7 +302,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
 
           {/* Function Signature & Parameters Documentation */}
           {selectedFunc && (
-            <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-800 text-xs font-mono">
+            <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-900/40 border-b border-slate-200 dark:border-white/[0.08] text-xs font-mono">
               <div className="text-indigo-600 dark:text-indigo-400 font-semibold mb-1">
                 def {selectedFunc.name}(
                 {selectedFunc.params.map((p, idx) => (
@@ -342,10 +342,10 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
               <textarea
                 value={argsJson}
                 onChange={(e) => handleJsonChange(e.target.value)}
-                className={`flex-1 w-full p-3 rounded-lg font-mono text-xs leading-5 bg-slate-50 dark:bg-slate-950 border resize-none focus:outline-none select-text ${
+                className={`flex-1 w-full p-3 rounded-lg font-mono text-xs leading-5 bg-slate-50 dark:bg-[#050811] border resize-none focus:outline-none select-text ${
                   jsonError
                     ? 'border-rose-500 text-rose-600 dark:text-rose-400'
-                    : 'border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 focus:border-indigo-500'
+                    : 'border-slate-200 dark:border-white/[0.08] text-slate-800 dark:text-slate-200 focus:border-indigo-500'
                 }`}
                 placeholder='{\n  "arg1": "value"\n}'
               />
@@ -376,9 +376,9 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
         </div>
 
         {/* Right Panel: Execution Result & Saved Test Cases Bench */}
-        <div className="w-1/2 flex flex-col bg-slate-50/70 dark:bg-[#0c121e] overflow-hidden">
+        <div className="w-1/2 flex flex-col bg-slate-50/70 dark:bg-[#090e1a]/90 backdrop-blur-md overflow-hidden">
           {/* Top Half: Live Execution Output Box */}
-          <div className="p-4 border-b border-slate-200 dark:border-slate-800">
+          <div className="p-4 border-b border-slate-200 dark:border-white/[0.08]">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-2">
               Latest Live Execution Output
             </span>
@@ -409,7 +409,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                 </div>
 
                 {lastResult.return_val && (
-                  <div className="mt-2 bg-white dark:bg-slate-900 p-2.5 rounded border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+                  <div className="mt-2 bg-white dark:bg-slate-900 p-2.5 rounded border border-slate-200 dark:border-white/[0.08] flex items-center justify-between gap-2">
                     <div className="truncate">
                       <span className="text-slate-400 mr-2">Return Value:</span>
                       <span className="font-semibold text-emerald-600 dark:text-emerald-400">
@@ -433,7 +433,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                 )}
               </div>
             ) : (
-              <div className="p-8 text-center text-xs text-slate-400 font-mono border border-dashed border-slate-200 dark:border-slate-800 rounded-lg">
+              <div className="p-8 text-center text-xs text-slate-400 font-mono border border-dashed border-slate-200 dark:border-white/[0.08] rounded-lg">
                 Click "Run Live & Trace" to execute the function and view return results.
               </div>
             )}
@@ -453,7 +453,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
               {testCases.map((tc) => (
                 <div
                   key={tc.id}
-                  className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600 transition-all flex items-center justify-between gap-3 group"
+                  className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.08] hover:border-indigo-400 dark:hover:border-indigo-600 transition-all flex items-center justify-between gap-3 group"
                 >
                   <div className="flex-1 truncate">
                     <div className="flex items-center gap-2 mb-1">

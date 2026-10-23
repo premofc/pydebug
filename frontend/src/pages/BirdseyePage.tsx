@@ -250,12 +250,12 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
   };
 
   return (
-    <div className="flex-1 flex flex-col h-[calc(100vh-3rem)] overflow-hidden bg-slate-50 dark:bg-[#090d16] text-slate-900 dark:text-slate-100 font-sans transition-colors">
+    <div className="flex-1 flex flex-col h-[calc(100vh-3rem)] overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 font-sans transition-colors">
       <div className="flex-1 grid grid-cols-12 overflow-hidden">
         
         {/* COLUMN 1: Function Calls Sidebar (280px / 3 cols) */}
-        <aside className="col-span-12 md:col-span-3 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0c121e] flex flex-col h-full overflow-hidden transition-colors">
-          <div className="p-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0e1626]">
+        <aside className="col-span-12 md:col-span-3 border-r border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#090e1a]/90 flex flex-col h-full overflow-hidden transition-colors">
+          <div className="p-3 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-[#0b1220]/90">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
                 <Layers className="w-3.5 h-3.5 text-indigo-500" />
@@ -270,7 +270,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
                 placeholder="Search functions or args..."
-                className="w-full bg-white dark:bg-[#070b13] border border-slate-200 dark:border-slate-700 rounded-md pl-8 pr-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono transition-colors"
+                className="w-full bg-white dark:bg-[#050811] border border-slate-200 dark:border-white/[0.12] rounded-md pl-8 pr-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono transition-colors"
               />
             </div>
           </div>
@@ -282,10 +282,10 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                 const isExpanded = expandedFuncs[fn] !== false;
 
                 return (
-                  <div key={fn} className="rounded-md border border-slate-200/80 dark:border-slate-800/80 overflow-hidden bg-slate-50/50 dark:bg-slate-900/30">
+                  <div key={fn} className="rounded-md border border-slate-200/80 dark:border-white/[0.08]/80 overflow-hidden bg-slate-50/50 dark:bg-[#0c1322]/50 backdrop-blur-xs">
                     <button
                       onClick={() => toggleFuncExpand(fn)}
-                      className="w-full px-2.5 py-1.5 bg-slate-100/70 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between text-left text-xs font-semibold text-slate-800 dark:text-slate-200 transition-colors"
+                      className="w-full px-2.5 py-1.5 bg-slate-100/70 dark:bg-[#0e172a]/70 hover:bg-slate-100 dark:hover:bg-indigo-950/40 flex items-center justify-between text-left text-xs font-semibold text-slate-800 dark:text-slate-200 transition-colors"
                     >
                       <div className="flex items-center gap-1.5 truncate">
                         {isExpanded ? (
@@ -353,8 +353,8 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
         </aside>
 
         {/* COLUMN 2: Center Code Studio */}
-        <main className="col-span-12 md:col-span-6 flex flex-col h-full bg-white dark:bg-[#070b13] border-r border-slate-200 dark:border-slate-800 overflow-hidden transition-colors">
-          <div className="p-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-[#0c121e] flex items-center justify-between">
+        <main className="col-span-12 md:col-span-6 flex flex-col h-full bg-white dark:bg-[#050811] border-r border-slate-200 dark:border-white/[0.08] overflow-hidden transition-colors">
+          <div className="p-3 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50/80 dark:bg-[#090e1a]/90 flex items-center justify-between">
             <div className="min-w-0 pr-3">
               <div className="flex items-center gap-2 mb-1">
                 <span className="font-mono text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
@@ -374,7 +374,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
             </div>
 
             {currentFuncCalls.length > 1 && (
-              <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-1 text-xs font-mono">
+              <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.12] rounded-md px-2 py-1 text-xs font-mono">
                 <button
                   onClick={() => handleStepCall(-1)}
                   disabled={currentCallIndex === 0}
@@ -440,7 +440,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                             className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border transition-all ${
                               isSelected || isHovered
                                 ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm'
-                                : 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-500'
+                                : 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/[0.12] hover:border-indigo-400 dark:hover:border-indigo-500'
                             }`}
                             title={`Click to inspect or pin: ${expr.text}`}
                           >
@@ -460,14 +460,14 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
         </main>
 
         {/* COLUMN 3: Right Inspection Dock */}
-        <aside className="col-span-12 md:col-span-3 flex flex-col h-full bg-white dark:bg-[#0c121e] overflow-hidden transition-colors">
-          <div className="h-11 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-[#0e1626] px-2 flex items-center justify-between">
+        <aside className="col-span-12 md:col-span-3 flex flex-col h-full bg-white dark:bg-[#090e1a]/90 overflow-hidden transition-colors">
+          <div className="h-11 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50/80 dark:bg-[#0b1220]/90 px-2 flex items-center justify-between">
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setActiveTab('values')}
                 className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${
                   activeTab === 'values'
-                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200 dark:border-slate-700'
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200 dark:border-white/[0.12]'
                     : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                 }`}
               >
@@ -477,7 +477,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                 onClick={() => setActiveTab('locals')}
                 className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${
                   activeTab === 'locals'
-                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200 dark:border-slate-700'
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200 dark:border-white/[0.12]'
                     : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                 }`}
               >
@@ -487,7 +487,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                 onClick={() => setActiveTab('pinned')}
                 className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${
                   activeTab === 'pinned'
-                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200 dark:border-slate-700'
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200 dark:border-white/[0.12]'
                     : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                 }`}
               >
@@ -514,7 +514,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                         className={`p-2.5 rounded-md border cursor-pointer transition-all ${
                           isSelected
                             ? 'bg-indigo-50/60 dark:bg-indigo-950/40 border-indigo-500/70'
-                            : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                            : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-white/[0.08] hover:border-slate-300 dark:hover:border-slate-700'
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1.5">
@@ -526,7 +526,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                           </span>
                         </div>
 
-                        <div className="flex items-center justify-between p-1.5 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                        <div className="flex items-center justify-between p-1.5 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/[0.08]">
                           <span className="text-emerald-600 dark:text-emerald-400 font-bold truncate max-w-[200px]">
                             {expr.val}
                           </span>
@@ -562,7 +562,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                   Object.entries(activeCall?.args || {}).map(([k, v]) => (
                     <div
                       key={k}
-                      className="p-2 rounded bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 flex items-center justify-between"
+                      className="p-2 rounded bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/[0.08] flex items-center justify-between"
                     >
                       <span className="font-semibold text-slate-700 dark:text-slate-300">{k}</span>
                       <span className="text-emerald-600 dark:text-emerald-400 truncate max-w-[160px] font-medium">
@@ -596,7 +596,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                   pinnedList.map((p) => (
                     <div
                       key={p.id}
-                      className="p-2 rounded bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 space-y-1"
+                      className="p-2 rounded bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/[0.08] space-y-1"
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[180px]">
