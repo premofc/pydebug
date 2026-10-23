@@ -242,7 +242,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
           </div>
           <div>
             <h1 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <span>Interactive Function Playground & Test Runner</span>
+              <span>Interactive Code Sandbox & Live Runner</span>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-mono">
                 Live Isolated Tracer
               </span>
@@ -258,7 +258,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
             onClick={onNavigateToHunter}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium shadow-sm transition-colors"
           >
-            <span>Open in Hunter Timeline</span>
+            <span>Open in Execution Timeline</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         )}

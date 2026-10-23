@@ -17,9 +17,9 @@ PyDebug is a high-performance visual debugger and runtime tracer built for moder
 | Feature | Description |
 |---|---|
 | **Dashboard** | Swagger-inspired operations log: every traced script, API call, and MCP tool captured in live accordion cards |
-| **Hunter VCR Timeline** | Play, pause, step forward/backward through any execution with full variable scope and AI Co-Pilot explanations |
-| **Birdseye AST Inspector** | Sub-expression evaluation for `if` conditions, list comprehensions, and complex expressions with call graph |
-| **Live Playground** | Supply JSON arguments to any function in your project, run it live, and instantly replay the trace |
+| **Execution Timeline** | Play, pause, step forward/backward through any execution with full variable scope and AI Co-Pilot explanations |
+| **Function Calls** | Sub-expression evaluation for `if` conditions, list comprehensions, and complex expressions with call graph |
+| **Code Sandbox** | Supply JSON arguments to any function in your project, run it live, and instantly replay the trace |
 | **AI Co-Pilot** | Built-in LLM integration — Ollama, OpenAI, DeepSeek, or any custom OpenAI-compatible endpoint |
 | **Multi-Provider LLM UI** | Graphical modal to configure any AI provider, discover available models, and test connection latency |
 | **MCP-Safe Architecture** | Explicitly bypasses `/mcp`, SSE streams, and async event loop internals — **zero timeout risk** |
@@ -366,10 +366,10 @@ The PyDebug Studio is a React + TypeScript + Tailwind CSS application bundled in
 
 | Page | Key Features |
 |---|---|
-| **Dashboard** | Live session list, Swagger-style method badges, one-click jump to Hunter/Birdseye/Playground |
-| **Hunter** | VCR play/pause/step controls, event stream filter (all/line/call/return), scope pane, AI explanation |
-| **Birdseye** | Function call tree, sub-expression chips per line, pinned watchlist, locals inspector |
-| **Playground** | Function picker, JSON argument editor with validation, saved test cases, live return value viewer |
+| **Dashboard** | Live session list, Swagger-style method badges, one-click jump to Timeline, Function Calls, or Sandbox |
+| **Execution Timeline** | VCR play/pause/step controls, event stream filter (all/line/call/return), scope pane, AI explanation |
+| **Function Calls** | Function call tree, sub-expression chips per line, pinned watchlist, locals inspector |
+| **Code Sandbox** | Function picker, JSON argument editor with validation, saved test cases, live return value viewer |
 
 ### Building the UI from Source
 

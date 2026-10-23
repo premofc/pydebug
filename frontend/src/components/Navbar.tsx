@@ -56,10 +56,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   const navItems = [
-    { id: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard, badge: '1', desc: 'Traced APIs & Tools' },
-    { id: 'hunter' as const, label: 'Hunter Replay', icon: Play, badge: '2', desc: 'Line-by-Line Stepper' },
-    { id: 'birdseye' as const, label: 'Birdseye AST', icon: Eye, badge: '3', desc: 'Expression Inspector' },
-    { id: 'playground' as const, label: 'Playground', icon: FlaskConical, badge: '4', desc: 'Live Function Runner' },
+    { id: 'dashboard' as const, label: 'Overview', icon: LayoutDashboard, badge: '1', desc: 'Traced Sessions & Operations' },
+    { id: 'hunter' as const, label: 'Execution Timeline', icon: Play, badge: '2', desc: 'Step-by-Step VCR Line Replay' },
+    { id: 'birdseye' as const, label: 'Function Calls', icon: Eye, badge: '3', desc: 'Call Hierarchy & Expression Inspector' },
+    { id: 'playground' as const, label: 'Code Sandbox', icon: FlaskConical, badge: '4', desc: 'Interactive Function Runner & Tests' },
   ];
 
   return (

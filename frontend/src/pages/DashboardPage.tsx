@@ -463,7 +463,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 <span>Recorded API Endpoints & Executions ({filteredSessions.length})</span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Click any row to expand request parameters, metadata, and jump directly into the Hunter timeline.
+                Click any row to expand request parameters, metadata, and jump directly into the execution timeline.
               </p>
             </div>
 
@@ -602,7 +602,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                                 className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold text-xs shadow-md shadow-indigo-600/20 flex items-center gap-2 transition-all hover:scale-[1.02] cursor-pointer"
                               >
                                 <Play className="w-3.5 h-3.5 fill-current" />
-                                <span>Replay with Hunter VCR</span>
+                                <span>Replay Timeline</span>
                               </button>
 
                               <button
@@ -610,7 +610,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                                 className="px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 text-slate-800 dark:text-slate-200 font-semibold text-xs flex items-center gap-2 transition-all cursor-pointer"
                               >
                                 <Eye className="w-3.5 h-3.5 text-indigo-500" />
-                                <span>Birdseye AST Inspector</span>
+                                <span>Inspect Function Calls</span>
                               </button>
 
                               <button
@@ -618,7 +618,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                                 className="px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 text-slate-800 dark:text-slate-200 font-semibold text-xs flex items-center gap-2 transition-all cursor-pointer"
                               >
                                 <FlaskConical className="w-3.5 h-3.5 text-amber-500" />
-                                <span>Test in Playground</span>
+                                <span>Test in Sandbox</span>
                               </button>
                             </div>
                           </div>
