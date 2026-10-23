@@ -586,7 +586,7 @@ wheels = [
 ]
 
 [[package]]
-name = "pydebug"
+name = "pydebug-studio"
 version = "0.1.0"
 source = { editable = "." }
 

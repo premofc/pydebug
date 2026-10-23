@@ -1,8 +1,8 @@
-﻿# 🔬 PyDebug — Next-Gen Visual Python Debugger & Live Tracer
+# 🔬 PyDebug — Next-Gen Visual Python Debugger & Live Tracer
 
 > **The execution speed of Hunter. The expression insight of Birdseye. A Swagger-grade live operations studio.**
 
-[![PyPI version](https://img.shields.io/pypi/v/pydebug.svg?color=blue)](https://pypi.org/project/pydebug/)
+[![PyPI version](https://img.shields.io/pypi/v/pydebug-studio.svg?color=blue)](https://pypi.org/project/pydebug-studio/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI / Starlette](https://img.shields.io/badge/FastAPI%20%7C%20Starlette-Compatible-009688.svg)](https://fastapi.tiangolo.com/)
@@ -31,10 +31,10 @@ PyDebug is a high-performance visual debugger and runtime tracer built for moder
 
 ```bash
 # From PyPI (recommended)
-pip install pydebug
+pip install pydebug-studio
 
 # Using uv
-uv add pydebug
+uv add pydebug-studio
 
 # From source
 git clone https://github.com/premofc/pydebug.git
