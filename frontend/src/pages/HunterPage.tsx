@@ -58,6 +58,20 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
     }
   }, [currentEvent, session.files, onEventChange]);
 
+  // If the session contains an exception, auto-focus on the exception event
+  useEffect(() => {
+    if (events.length > 0) {
+      const excIdx = events.findIndex(
+        (ev) => ev.kind === 'exception' || Boolean(ev.exc_type) || ev.line === (session.stats as any)?.error_line
+      );
+      if (excIdx !== -1) {
+        setCurrentIdx(excIdx);
+      } else {
+        setCurrentIdx(0);
+      }
+    }
+  }, [session.id]);
+
   // Auto-scroll code view to keep current executing line in view
   useEffect(() => {
     if (currentEvent) {
@@ -462,6 +476,7 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
               const isCurrentLine = currentEvent?.line === lineNum;
               const subExprs = isCurrentLine ? currentEvent.expressions : undefined;
 
+              const isExceptionLine = isCurrentLine && (currentEvent?.kind === 'exception' || Boolean(currentEvent?.exc_type));
               return (
                 <div
                   key={lineNum}
@@ -470,7 +485,9 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
                   }}
                   className={`group flex flex-col rounded transition-colors ${
                     isCurrentLine
-                      ? 'bg-indigo-50/90 dark:bg-indigo-950/40 border-l-3 border-indigo-600 dark:border-indigo-400 shadow-xs'
+                      ? isExceptionLine
+                        ? 'bg-rose-50/95 dark:bg-rose-950/50 border-l-4 border-rose-600 dark:border-rose-400 shadow-xs'
+                        : 'bg-indigo-50/90 dark:bg-indigo-950/40 border-l-3 border-indigo-600 dark:border-indigo-400 shadow-xs'
                       : 'hover:bg-slate-100/50 dark:hover:bg-slate-800/20'
                   }`}
                 >

@@ -1,3 +1,5 @@
+import asyncio
+import inspect
 import ast
 import importlib.util
 import json
@@ -236,13 +238,17 @@ def extract_function_signatures(file_path: str) -> list[dict[str, Any]]:
         return []
 
     funcs: list[dict[str, Any]] = []
-    for node in ast.walk(tree):
+
+    # Iterate top-level nodes in tree.body only — prevents capturing inner closures/callbacks like `on_chunk`
+    for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             if node.name.startswith("_") or node.name == "run_demo":
                 continue
             params: list[dict[str, Any]] = []
             defaults: list[Any] = [None] * (len(node.args.args) - len(node.args.defaults)) + list(node.args.defaults)
             for arg, default in zip(node.args.args, defaults):
+                if arg.arg in ("self", "cls"):
+                    continue
                 default_val = ast.unparse(default) if default else None
                 annotation = ast.unparse(arg.annotation) if arg.annotation else None
                 params.append({
@@ -258,9 +264,42 @@ def extract_function_signatures(file_path: str) -> list[dict[str, Any]]:
                 "params": params,
                 "docstring": doc.strip(),
                 "file_path": str(p),
+                "is_async": isinstance(node, ast.AsyncFunctionDef),
                 "sample_valid": sample_valid,
                 "sample_invalid": sample_invalid,
             })
+        elif isinstance(node, ast.ClassDef):
+            if node.name.startswith("_"):
+                continue
+            for sub in node.body:
+                if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    if sub.name.startswith("_"):
+                        continue
+                    params = []
+                    defaults = [None] * (len(sub.args.args) - len(sub.args.defaults)) + list(sub.args.defaults)
+                    for arg, default in zip(sub.args.args, defaults):
+                        if arg.arg in ("self", "cls"):
+                            continue
+                        default_val = ast.unparse(default) if default else None
+                        annotation = ast.unparse(arg.annotation) if arg.annotation else None
+                        params.append({
+                            "name": arg.arg,
+                            "annotation": annotation,
+                            "default": default_val,
+                        })
+                    doc = ast.get_docstring(sub) or ""
+                    full_name = f"{node.name}.{sub.name}"
+                    sample_valid, sample_invalid = generate_sample_args(sub.name, params)
+                    funcs.append({
+                        "name": full_name,
+                        "line": sub.lineno,
+                        "params": params,
+                        "docstring": doc.strip(),
+                        "file_path": str(p),
+                        "is_async": isinstance(sub, ast.AsyncFunctionDef),
+                        "sample_valid": sample_valid,
+                        "sample_invalid": sample_invalid,
+                    })
     return funcs
 
 
@@ -435,6 +474,7 @@ class PyDebugHandler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(length).decode("utf-8"))
 
     def _handle_execute_function(self) -> None:
+        payload = {}
         try:
             payload = self._read_json_body()
             file_path = payload.get("file_path")
@@ -450,43 +490,106 @@ class PyDebugHandler(BaseHTTPRequestHandler):
                 self._send_json(404, json.dumps({"error": f"File {file_path} not found"}).encode())
                 return
 
-            spec = importlib.util.spec_from_file_location("user_live_run", str(p))
-            if not spec or not spec.loader:
-                self._send_json(500, json.dumps({"error": "Cannot load module spec"}).encode())
-                return
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
+            # Ensure workspace root is in sys.path so package relative imports succeed
+            cwd = Path.cwd().resolve()
+            if str(cwd) not in sys.path:
+                sys.path.insert(0, str(cwd))
 
-            target_func = getattr(mod, func_name, None)
+            # Compute module name relative to cwd (e.g. server.mcp_tools.services.copay)
+            try:
+                rel = p.relative_to(cwd)
+                parts = list(rel.parts)
+                if parts[-1].endswith(".py"):
+                    parts[-1] = parts[-1][:-3]
+                if parts[-1] == "__init__":
+                    parts.pop()
+                mod_name = ".".join(parts)
+            except ValueError:
+                mod_name = p.stem
+
+            mod = None
+            try:
+                mod = importlib.import_module(mod_name)
+                mod = importlib.reload(mod)
+            except Exception as import_err:
+                logger.warning("Direct import of %s failed (%s), trying spec loader with package...", mod_name, import_err)
+                parent_pkg = mod_name.rsplit(".", 1)[0] if "." in mod_name else ""
+                spec = importlib.util.spec_from_file_location(mod_name, str(p), submodule_search_locations=[str(p.parent)])
+                if spec and spec.loader:
+                    mod = importlib.util.module_from_spec(spec)
+                    mod.__package__ = parent_pkg
+                    sys.modules[mod_name] = mod
+                    spec.loader.exec_module(mod)
+                else:
+                    raise
+
+            target_func = None
+            if "." in func_name:
+                cls_name, m_name = func_name.split(".", 1)
+                cls_obj = getattr(mod, cls_name, None)
+                if cls_obj:
+                    try:
+                        inst = cls_obj()
+                        target_func = getattr(inst, m_name, None)
+                    except Exception:
+                        target_func = getattr(cls_obj, m_name, None)
+            else:
+                target_func = getattr(mod, func_name, None)
+
             if not target_func or not callable(target_func):
-                self._send_json(404, json.dumps({"error": f"Function {func_name} not found or not callable"}).encode())
+                empty_sess = TraceSession(title=f"Lookup Failed: {func_name}")
+                self._send_json(200, json.dumps({
+                    "success": False,
+                    "error": f"Function {func_name} not found or not callable in {p.name}",
+                    "error_type": "LookupError",
+                    "error_message": f"Function {func_name} could not be resolved as a callable object.",
+                    "session": empty_sess.to_dict(),
+                }).encode("utf-8"))
                 return
 
             session = TraceSession(title=f"Live Run: {func_name}()")
-            tracer = PyTracer(session=session, include_paths=[str(p)])
+            # Include all project directories so the tracer follows execution into services/repos
+            include_paths = [str(cwd), str(p.parent), str(p)]
+            tracer = PyTracer(session=session, include_paths=include_paths)
             tracer.start()
 
             ret_val = None
             error_type = None
             error_msg = None
             error_tb = None
+            exc_line = None
+            exc_file = None
+
             try:
-                if isinstance(kwargs, dict):
-                    ret_val = target_func(**kwargs)
-                elif isinstance(kwargs, list):
-                    ret_val = target_func(*kwargs)
+                call_kwargs = kwargs if isinstance(kwargs, dict) else {}
+                if inspect.iscoroutinefunction(target_func):
+                    ret_val = asyncio.run(target_func(**call_kwargs))
                 else:
-                    ret_val = target_func()
+                    ret_val = target_func(**call_kwargs)
+                    if inspect.iscoroutine(ret_val):
+                        ret_val = asyncio.run(ret_val)
             except Exception as exc:
                 error_type = type(exc).__name__
                 error_msg = str(exc) or error_type
                 error_tb = traceback.format_exc()
+                tb = exc.__traceback__
+                while tb and tb.tb_next:
+                    tb = tb.tb_next
+                if tb:
+                    exc_line = tb.tb_lineno
+                    exc_file = tb.tb_frame.f_code.co_filename
             finally:
                 tracer.stop()
                 session.compute_stats()
 
             if error_msg:
                 session.stats["has_uncaught_error"] = True
+                session.stats["error_type"] = error_type
+                session.stats["error_message"] = error_msg
+                if exc_line is not None:
+                    session.stats["error_line"] = exc_line
+                if exc_file is not None:
+                    session.stats["error_file"] = exc_file
 
             get_session_manager().add_session(session)
 
@@ -498,12 +601,23 @@ class PyDebugHandler(BaseHTTPRequestHandler):
                 "error_type": error_type,
                 "error_message": error_msg,
                 "error_traceback": error_tb,
+                "error_file": exc_file,
+                "error_line": exc_line,
             }
             self._send_json(200, json.dumps(resp_data).encode("utf-8"))
 
         except Exception as e:
             logger.exception("Function execution failed")
-            self._send_json(500, json.dumps({"error": str(e)}).encode("utf-8"))
+            err_tb = traceback.format_exc()
+            fallback_sess = TraceSession(title=f"Execution Failed: {payload.get('function_name', 'run')}")
+            self._send_json(200, json.dumps({
+                "success": False,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "error_traceback": err_tb,
+                "session": fallback_sess.to_dict(),
+            }).encode("utf-8"))
 
     def _handle_simulate_request(self) -> None:
         """Simulates an incoming live API endpoint or MCP tool call with complete line-by-line tracing."""

@@ -123,17 +123,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
   const handleQuickExecute = async (func: FunctionSignature) => {
     setExecutingFunc(func.name);
     try {
-      const args = Object.fromEntries(
-        func.params.map((p) => {
-          const ann = p.annotation || '';
-          if (ann.includes('list')) return [p.name, [{ name: 'Item', price: 50.0, qty: 1 }]];
-          if (ann.includes('dict')) return [p.name, { key: 'value' }];
-          if (ann.includes('int')) return [p.name, 25];
-          if (ann.includes('float')) return [p.name, 99.5];
-          if (ann.includes('bool')) return [p.name, true];
-          return [p.name, p.default && p.default !== 'None' ? p.default.replace(/['"]/g, '') : 'sample_value'];
-        })
-      );
+      const args = (func.sample_valid && Object.keys(func.sample_valid).length > 0)
+        ? func.sample_valid
+        : Object.fromEntries(
+            func.params.map((p) => {
+              const ann = (p.annotation || '').toLowerCase();
+              if (ann.includes('list')) return [p.name, ['item_1', 'item_2']];
+              if (ann.includes('dict')) return [p.name, { key: 'value' }];
+              if (ann.includes('int')) return [p.name, 10];
+              if (ann.includes('float')) return [p.name, 25.5];
+              if (ann.includes('bool')) return [p.name, true];
+              return [p.name, p.default && p.default !== 'None' ? p.default.replace(/['"]/g, '') : 'sample_value'];
+            })
+          );
+
       const res = await fetch('/api/execute-function', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -142,7 +145,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
       if (res.ok) {
         const data = await res.json();
         await fetchSessions();
-        if (data.session?.id) onSelectSession(data.session.id, 'hunter');
+        if (data.session?.id) {
+          onSelectSession(data.session.id, 'hunter');
+        }
       }
     } catch (err) {
       console.error('Quick execute error:', err);

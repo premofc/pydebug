@@ -34,11 +34,16 @@ export interface TraceSession {
   stats: {
     total_events: number;
     files_count: number;
-    calls_count: number;
-    returns_count: number;
-    exceptions_count: number;
+    calls_count?: number;
+    returns_count?: number;
+    exceptions_count?: number;
     max_depth: number;
     duration_ms: number;
+    has_uncaught_error?: boolean;
+    error_line?: number;
+    error_file?: string;
+    error_type?: string;
+    error_message?: string;
   };
 }
 
@@ -82,6 +87,7 @@ export interface FunctionSignature {
   params: FunctionParam[];
   docstring: string;
   file_path: string;
+  is_async?: boolean;
   sample_valid?: Record<string, any>;
   sample_invalid?: Record<string, any>;
 }

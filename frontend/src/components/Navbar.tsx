@@ -63,9 +63,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   ];
 
   return (
-    <header className="h-14 border-b border-slate-200/80 dark:border-white/[0.08] bg-white/95 dark:bg-[#080d19]/95 backdrop-blur-md px-4 flex items-center justify-between select-none z-40 sticky top-0 transition-all">
+    <header className="h-14 border-b border-slate-200/80 dark:border-white/[0.08] bg-white/95 dark:bg-[#080d19]/95 backdrop-blur-md px-6 flex items-center justify-between select-none z-40 sticky top-0 transition-all">
       {/* Brand & Active Context */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-4">
         {/* Brand Logo */}
         <div 
           onClick={() => onPageChange('dashboard')}
@@ -78,7 +78,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-sm tracking-tight text-slate-900 dark:text-white">PyDebug</span>
               <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 font-mono">
-                v0.1.0
+                v0.1.2
               </span>
             </div>
             <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium tracking-wide">STUDIO</span>
@@ -109,20 +109,27 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Active Trace File Breadcrumb */}
-        {activeFileName && (
-          <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-mono bg-slate-50 dark:bg-[#050811]/60 px-2.5 py-1 rounded-md border border-slate-200/60 dark:border-white/[0.08]">
-            <FileCode className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
-            <span className="text-slate-800 dark:text-slate-200 font-medium">{activeFileName}</span>
-            {activeFunctionName && (
-              <>
-                <span className="text-slate-400">/</span>
-                <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
-                  {activeFunctionName}()
-                </span>
-              </>
-            )}
-          </div>
-        )}
+        <div className="hidden lg:flex items-center gap-2 text-xs font-mono bg-slate-50 dark:bg-[#050811]/60 px-3 py-1 rounded-lg border border-slate-200/80 dark:border-white/[0.08]">
+          <FileCode className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+          {activeFileName && !activeFileName.includes("demo_") ? (
+            <>
+              <span className="text-slate-800 dark:text-slate-200 font-medium">{activeFileName}</span>
+              {activeFunctionName && (
+                <>
+                  <span className="text-slate-400">/</span>
+                  <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
+                    {activeFunctionName}()
+                  </span>
+                </>
+              )}
+            </>
+          ) : (
+            <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+              <span className="text-slate-700 dark:text-slate-300 font-medium font-sans">ClaimCare MCP Workspace</span>
+              <span className="text-emerald-500 font-medium text-[11px] font-sans">• Ready</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Center: Segmented Navigation Pill */}

@@ -21,8 +21,8 @@ export const App: React.FC = () => {
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
   const [aiConfig, setAiConfig] = useState<AIProviderConfig | null>(null);
   const [activeFileInfo, setActiveFileInfo] = useState<{ fileName: string; funcName: string }>({
-    fileName: 'my_script.py',
-    funcName: 'calculate_order_total',
+    fileName: '',
+    funcName: '',
   });
 
   // Apply theme to <html>
@@ -158,8 +158,8 @@ export const App: React.FC = () => {
         }
         isConnected={isConnected}
         sessionId={session.id}
-        activeFileName={activeFileInfo.fileName}
-        activeFunctionName={activeFileInfo.funcName}
+        activeFileName={hasRealSession ? activeFileInfo.fileName : undefined}
+        activeFunctionName={hasRealSession ? activeFileInfo.funcName : undefined}
         aiConfig={aiConfig}
         onOpenAiSettings={() => setIsAiModalOpen(true)}
       />
@@ -190,6 +190,7 @@ export const App: React.FC = () => {
             session={session}
             onSessionUpdated={(newSess) => {
               setSession(newSess);
+              setHasRealSession(true);
               const firstEv = newSess.events[0];
               if (firstEv) {
                 const fname = newSess.files[firstEv.file_idx] || 'script.py';

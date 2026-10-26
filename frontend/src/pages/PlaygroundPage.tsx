@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Play,
   FlaskConical,
@@ -7,18 +7,16 @@ import {
   AlertCircle,
   Copy,
   Check,
-  RotateCcw,
-  Plus,
-  Trash2,
   Sparkles,
   ArrowRight,
   Bug,
-  ShieldCheck,
+  ShieldAlert,
   ChevronDown,
   ChevronRight,
+  Search,
   Activity,
   Clock,
-  Terminal
+  Terminal,
 } from 'lucide-react';
 import type { TraceSession, FunctionSignature, TestCase } from '../types';
 
@@ -29,12 +27,13 @@ interface PlaygroundPageProps {
 }
 
 export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
-  session,
+  session: _session,
   onSessionUpdated,
   onNavigateToHunter,
 }) => {
   const [functions, setFunctions] = useState<FunctionSignature[]>([]);
   const [selectedFunc, setSelectedFunc] = useState<FunctionSignature | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [argsJson, setArgsJson] = useState<string>('{}');
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState<boolean>(false);
@@ -47,14 +46,14 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
     error_type?: string;
     error_message?: string;
     error_traceback?: string;
+    error_file?: string;
+    error_line?: number;
     duration_ms?: number;
   } | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
-
-  // Test cases dynamically populated from discovered project functions
   const [testCases, setTestCases] = useState<TestCase[]>([]);
 
-  // Fetch discoverable project functions from backend and populate dynamic test cases
+  // Fetch discoverable project functions from backend
   useEffect(() => {
     const fetchFuncs = async () => {
       try {
@@ -70,9 +69,9 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
               setArgsJson(JSON.stringify(generateFallbackTemplate(data[0]), null, 2));
             }
 
-            // Dynamically generate test cases for the user's project functions
+            // Generate dynamic test scenarios from discovered project functions
             const dynamicCases: TestCase[] = [];
-            data.slice(0, 8).forEach((fn) => {
+            data.slice(0, 10).forEach((fn) => {
               if (fn.sample_valid && Object.keys(fn.sample_valid).length > 0) {
                 dynamicCases.push({
                   id: `tc-${fn.name}-valid`,
@@ -92,32 +91,44 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                 });
               }
             });
-            if (dynamicCases.length > 0) {
-              setTestCases(dynamicCases);
-            }
+            setTestCases(dynamicCases);
           }
         }
       } catch (err) {
-        console.log('Using fallback default presets');
+        console.error('Error fetching functions:', err);
       }
     };
     fetchFuncs();
   }, []);
 
+  const filteredFunctions = useMemo(() => {
+    if (!searchQuery.trim()) return functions;
+    const q = searchQuery.toLowerCase();
+    return functions.filter(
+      (fn) =>
+        fn.name.toLowerCase().includes(q) ||
+        fn.file_path.toLowerCase().includes(q) ||
+        fn.params.some((p) => p.name.toLowerCase().includes(q))
+    );
+  }, [functions, searchQuery]);
+
   const generateFallbackTemplate = (func: FunctionSignature): Record<string, any> => {
     const template: Record<string, any> = {};
     func.params.forEach((p) => {
+      if (p.name === 'self' || p.name === 'cls') return;
       const ann = (p.annotation || '').toLowerCase();
       if (ann.includes('list')) {
-        template[p.name] = [{ name: 'Sample Item', price: 50.0, qty: 1 }];
+        template[p.name] = ['item_1', 'item_2'];
+      } else if (ann.includes('dict')) {
+        template[p.name] = { key: 'value' };
       } else if (ann.includes('int')) {
-        template[p.name] = 30;
+        template[p.name] = 10;
       } else if (ann.includes('float')) {
         template[p.name] = 25.5;
       } else if (ann.includes('bool')) {
-        template[p.name] = false;
+        template[p.name] = true;
       } else {
-        template[p.name] = p.default && p.default !== 'None' ? p.default.replace(/['"]/g, '') : 'sample_arg';
+        template[p.name] = p.default && p.default !== 'None' ? p.default.replace(/['"]/g, '') : 'sample_value';
       }
     });
     return template;
@@ -125,7 +136,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
 
   const handleSelectFunction = (func: FunctionSignature) => {
     setSelectedFunc(func);
-    if (func.sample_valid) {
+    if (func.sample_valid && Object.keys(func.sample_valid).length > 0) {
       setArgsJson(JSON.stringify(func.sample_valid, null, 2));
     } else {
       setArgsJson(JSON.stringify(generateFallbackTemplate(func), null, 2));
@@ -136,7 +147,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
 
   const loadValidPreset = () => {
     if (!selectedFunc) return;
-    if (selectedFunc.sample_valid) {
+    if (selectedFunc.sample_valid && Object.keys(selectedFunc.sample_valid).length > 0) {
       setArgsJson(JSON.stringify(selectedFunc.sample_valid, null, 2));
     } else {
       setArgsJson(JSON.stringify(generateFallbackTemplate(selectedFunc), null, 2));
@@ -146,13 +157,14 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
 
   const loadInvalidPreset = () => {
     if (!selectedFunc) return;
-    if (selectedFunc.sample_invalid) {
+    if (selectedFunc.sample_invalid && Object.keys(selectedFunc.sample_invalid).length > 0) {
       setArgsJson(JSON.stringify(selectedFunc.sample_invalid, null, 2));
     } else {
       const badArgs: Record<string, any> = {};
       selectedFunc.params.forEach((p, idx) => {
+        if (p.name === 'self' || p.name === 'cls') return;
         if (idx === 0) {
-          badArgs[p.name] = 'wrong_string_trigger_exception';
+          badArgs[p.name] = 'trigger_exception_invalid_arg';
         } else {
           badArgs[p.name] = null;
         }
@@ -196,7 +208,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          file_path: fn.file_path || session.files[0] || 'my_script.py',
+          file_path: fn.file_path,
           function_name: fn.name,
           args: parsedArgs,
         }),
@@ -211,12 +223,14 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
         }
         setLastResult({
           success: data.success,
-          return_val: data.return_val,
+          return_val: data.return_val || '',
           events_count: data.session?.events?.length || 0,
           error: data.error,
           error_type: data.error_type,
           error_message: data.error_message,
           error_traceback: data.error_traceback,
+          error_file: data.error_file,
+          error_line: data.error_line,
           duration_ms: elapsed,
         });
       } else {
@@ -226,7 +240,9 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
           return_val: '',
           events_count: 0,
           error: err.error || 'Server error during execution',
-          error_type: 'ServerError',
+          error_type: err.error_type || 'ServerError',
+          error_message: err.error_message || err.error,
+          error_traceback: err.error_traceback,
           duration_ms: elapsed,
         });
       }
@@ -262,28 +278,11 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
     runLiveExecution(tc.args, matchedFunc);
   };
 
-  const saveCurrentAsTestCase = () => {
-    try {
-      const parsed = JSON.parse(argsJson);
-      const isErr = Boolean(lastResult && !lastResult.success);
-      const newTc: TestCase = {
-        id: `tc-${Date.now()}`,
-        name: `${selectedFunc?.name || 'func'} — ${isErr ? 'Fault Injection' : 'Custom Test'}`,
-        function_name: selectedFunc?.name || 'function',
-        file_path: selectedFunc?.file_path || '',
-        args: parsed,
-      };
-      setTestCases((prev) => [...prev, newTc]);
-    } catch (e) {
-      setJsonError('Cannot save invalid JSON as test case.');
-    }
-  };
-
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 select-none transition-colors">
       {/* Top Banner Header */}
       <div className="h-14 px-6 bg-white/95 dark:bg-[#080d19]/95 border-b border-slate-200 dark:border-white/[0.08] backdrop-blur-md flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           <div className="w-8 h-8 rounded-lg bg-indigo-600/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center border border-indigo-500/30">
             <FlaskConical className="w-4 h-4 text-indigo-500" />
           </div>
@@ -319,344 +318,365 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
         )}
       </div>
 
-      {/* Main Split Panels */}
+      {/* Main 3-Column Split */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Panel: Function Selector & Argument Editor */}
-        <div className="w-1/2 flex flex-col border-r border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#060911] overflow-hidden">
-          {/* Function Selector Dropdown Header */}
-          <div className="p-3.5 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50/70 dark:bg-[#080d19]/60 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 flex-1">
-              <Code2 className="w-4 h-4 text-indigo-500 shrink-0" />
-              <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 shrink-0">
-                Target Function:
-              </label>
-              <select
-                value={selectedFunc?.name || ''}
-                onChange={(e) => {
-                  const f = functions.find((x) => x.name === e.target.value);
-                  if (f) handleSelectFunction(f);
-                }}
-                className="flex-1 px-3 py-1.5 rounded-lg bg-white dark:bg-[#050811] border border-slate-200 dark:border-white/[0.12] text-xs font-mono font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-xs cursor-pointer"
-              >
-                {functions.map((f) => {
-                  const fname = f.file_path ? f.file_path.split(/[\\/]/).pop() : 'script.py';
-                  return (
-                    <option key={`${f.file_path}-${f.name}`} value={f.name}>
-                      {f.name}() — {fname} (Line {f.line})
-                    </option>
-                  );
-                })}
-              </select>
+        {/* Column 1: Discovered Functions List & Search */}
+        <div className="w-80 border-r border-slate-200 dark:border-white/[0.08] flex flex-col bg-white dark:bg-[#070b16] shrink-0">
+          <div className="p-3 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50/50 dark:bg-[#080d1a]/50">
+            <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between mb-2">
+              <span className="flex items-center gap-1.5">
+                <Code2 className="w-3.5 h-3.5 text-indigo-500" />
+                Target Functions
+              </span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono">
+                {filteredFunctions.length}
+              </span>
             </div>
-
-            <button
-              onClick={() => selectedFunc && handleSelectFunction(selectedFunc)}
-              className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              title="Reset arguments template"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Filter functions..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg bg-white dark:bg-[#04060c] border border-slate-200 dark:border-white/[0.1] text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-colors"
+              />
+            </div>
           </div>
 
-          {/* Function Signature & Parameters Documentation */}
-          {selectedFunc && (
-            <div className="px-4 py-3 bg-slate-50/50 dark:bg-[#090e1a]/40 border-b border-slate-200 dark:border-white/[0.08] text-xs font-mono">
-              <div className="text-indigo-600 dark:text-indigo-400 font-semibold mb-1 flex items-center gap-1.5 flex-wrap">
-                <span className="text-purple-600 dark:text-purple-400">def</span>
-                <span>{selectedFunc.name}(</span>
-                {selectedFunc.params.map((p, idx) => (
-                  <span key={p.name} className="text-slate-700 dark:text-slate-300">
-                    <span className="text-indigo-500 dark:text-indigo-300">{p.name}</span>
-                    {p.annotation ? <span className="text-emerald-600 dark:text-emerald-400">: {p.annotation}</span> : ''}
-                    {p.default ? <span className="text-amber-600 dark:text-amber-400"> = {p.default}</span> : ''}
-                    {idx < selectedFunc.params.length - 1 ? ', ' : ''}
-                  </span>
-                ))}
-                <span>)</span>
-              </div>
-              {selectedFunc.docstring && (
-                <div className="text-slate-500 dark:text-slate-400 font-sans text-[11px] italic mt-1">
-                  "{selectedFunc.docstring}"
+          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            {filteredFunctions.map((fn) => {
+              const isSelected = selectedFunc?.name === fn.name && selectedFunc?.file_path === fn.file_path;
+              const displayFile = fn.file_path.split(/[\\/]/).pop() || fn.file_path;
+
+              return (
+                <div
+                  key={`${fn.file_path}-${fn.name}`}
+                  onClick={() => handleSelectFunction(fn)}
+                  className={`p-2.5 rounded-xl cursor-pointer transition-all border ${
+                    isSelected
+                      ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-500/40 dark:border-indigo-500/40 shadow-xs'
+                      : 'border-transparent hover:bg-slate-100/70 dark:hover:bg-slate-800/40 hover:border-slate-200/80 dark:hover:border-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="font-mono text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                      {fn.name}()
+                    </span>
+                    {fn.is_async && (
+                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 font-mono font-medium">
+                        async
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400 font-mono">
+                    <span className="truncate" title={fn.file_path}>
+                      {displayFile}:{fn.line}
+                    </span>
+                    <span>•</span>
+                    <span>{fn.params.filter((p) => p.name !== 'self' && p.name !== 'cls').length} params</span>
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
+              );
+            })}
+          </div>
+        </div>
 
-          {/* Argument JSON Editor & Preset Controls */}
-          <div className="flex-1 flex flex-col p-4 overflow-hidden">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Invocation Arguments (JSON)
-              </span>
+        {/* Column 2: JSON Parameter Editor & Runner */}
+        <div className="flex-1 border-r border-slate-200 dark:border-white/[0.08] flex flex-col bg-white dark:bg-[#070b16] overflow-hidden">
+          {/* Function Header */}
+          <div className="p-4 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50/50 dark:bg-[#080d1a]/50">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-base font-bold text-slate-900 dark:text-white">
+                    {selectedFunc?.name || 'Select Function'}()
+                  </span>
+                  {selectedFunc?.is_async && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 font-mono">
+                      async coroutine
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-slate-400 font-mono mt-0.5 truncate" title={selectedFunc?.file_path}>
+                  {selectedFunc?.file_path}
+                </div>
+              </div>
 
-              {/* Quick Input Presets: Valid vs Fault Injection */}
-              <div className="flex items-center gap-1.5">
+              {/* Quick Preset Buttons */}
+              <div className="flex items-center gap-2">
                 <button
                   onClick={loadValidPreset}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-[11px] font-medium transition-colors cursor-pointer"
-                  title="Load verified valid inputs (Success test)"
+                  className="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Load verified valid parameters"
                 >
-                  <ShieldCheck className="w-3 h-3 text-emerald-500" />
-                  <span>Valid Inputs</span>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Valid Input</span>
                 </button>
-
                 <button
                   onClick={loadInvalidPreset}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800/60 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-[11px] font-medium transition-colors cursor-pointer"
-                  title="Load faulty inputs to trigger an exception (Fault injection test)"
+                  className="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/40 flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Inject fault parameters to test exception handling and view exact traceback"
                 >
-                  <Bug className="w-3 h-3 text-rose-500" />
-                  <span>Trigger Exception</span>
-                </button>
-
-                <button
-                  onClick={saveCurrentAsTestCase}
-                  className="flex items-center gap-1 px-2 py-1 rounded-md text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors"
-                  title="Save current JSON as test case"
-                >
-                  <Plus className="w-3 h-3" />
-                  <span>Save</span>
+                  <Bug className="w-3.5 h-3.5" />
+                  <span>Inject Fault (Trigger Exception)</span>
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 relative flex flex-col">
+            {selectedFunc?.docstring && (
+              <p className="mt-2 text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-[#060912] p-2 rounded-lg border border-slate-200/80 dark:border-white/[0.06] line-clamp-2">
+                {selectedFunc.docstring}
+              </p>
+            )}
+          </div>
+
+          {/* JSON Argument Editor */}
+          <div className="flex-1 flex flex-col p-4 overflow-hidden">
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+              <span className="flex items-center gap-1.5">
+                <Terminal className="w-3.5 h-3.5 text-indigo-500" />
+                Function Arguments (JSON)
+              </span>
+              {jsonError ? (
+                <span className="text-[11px] text-rose-500 font-mono flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Invalid JSON
+                </span>
+              ) : (
+                <span className="text-[11px] text-emerald-500 font-mono flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  Valid JSON
+                </span>
+              )}
+            </div>
+
+            <div className="flex-1 rounded-xl border border-slate-200 dark:border-white/[0.08] overflow-hidden bg-slate-900 text-slate-100 flex flex-col shadow-inner">
               <textarea
                 value={argsJson}
                 onChange={(e) => handleJsonChange(e.target.value)}
-                className={`flex-1 w-full p-3 rounded-lg font-mono text-xs leading-5 bg-slate-50 dark:bg-[#050811] border resize-none focus:outline-none select-text shadow-xs ${
-                  jsonError
-                    ? 'border-rose-500 text-rose-600 dark:text-rose-400 focus:ring-1 focus:ring-rose-500'
-                    : 'border-slate-200 dark:border-white/[0.08] text-slate-800 dark:text-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500'
-                }`}
-                placeholder='{\n  "arg1": "value"\n}'
+                spellCheck={false}
+                className="flex-1 p-3 font-mono text-xs leading-relaxed bg-transparent resize-none focus:outline-none selection:bg-indigo-600/40"
               />
-              {jsonError && (
-                <div className="mt-1 text-[11px] text-rose-500 flex items-center gap-1 font-mono">
-                  <AlertCircle className="w-3 h-3 shrink-0" />
-                  <span>{jsonError}</span>
-                </div>
-              )}
             </div>
 
-            {/* Run Button */}
+            {/* Run Button Footer */}
             <div className="mt-3 flex items-center justify-between">
-              <span className="text-[11px] text-slate-400 font-sans">
-                Press Run to execute in an isolated live tracer and inspect results.
-              </span>
-
+              <div className="text-[11px] text-slate-400">
+                Executes inside PyTracer with sub-expression monitoring & exception capture.
+              </div>
               <button
                 onClick={() => runLiveExecution()}
                 disabled={isRunning || Boolean(jsonError)}
-                className="px-5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-semibold text-xs shadow-md shadow-indigo-600/25 flex items-center gap-2 transition-all hover:scale-[1.02] cursor-pointer"
+                className={`px-5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 shadow-sm transition-all duration-150 cursor-pointer ${
+                  isRunning || Boolean(jsonError)
+                    ? 'opacity-50 cursor-not-allowed bg-slate-300 dark:bg-slate-800 text-slate-500'
+                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/25 active:scale-95'
+                }`}
               >
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>{isRunning ? 'Tracing Execution...' : 'Run Live & Trace'}</span>
+                {isRunning ? (
+                  <>
+                    <Activity className="w-3.5 h-3.5 animate-spin" />
+                    <span>Tracing & Executing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    <span>Run Live Execution</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
         </div>
 
-        {/* Right Panel: Execution Result & Saved Test Cases Bench */}
-        <div className="w-1/2 flex flex-col bg-slate-50/70 dark:bg-[#080d19]/80 backdrop-blur-md overflow-hidden">
-          {/* Top Half: Live Execution Output Box */}
-          <div className="p-4 border-b border-slate-200 dark:border-white/[0.08]">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-2">
-              Latest Live Execution Output & Flow Analysis
+        {/* Column 3: Live Output & Exception Inspector */}
+        <div className="w-96 flex flex-col bg-slate-50/50 dark:bg-[#050811] overflow-hidden shrink-0">
+          <div className="p-4 border-b border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#070b16] flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <Activity className="w-3.5 h-3.5 text-indigo-500" />
+              Live Execution Output
             </span>
+            {lastResult?.duration_ms && (
+              <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                {lastResult.duration_ms.toFixed(1)} ms
+              </span>
+            )}
+          </div>
 
-            {lastResult ? (
-              <div
-                className={`p-4 rounded-xl border font-mono text-xs shadow-xs transition-all ${
-                  lastResult.success
-                    ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-400/50 dark:border-emerald-800/80'
-                    : 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-400/60 dark:border-rose-800/80'
-                }`}
-              >
-                {/* Status Bar */}
-                <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-200/60 dark:border-white/[0.06]">
-                  <div className="flex items-center gap-2">
-                    {lastResult.success ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 animate-pulse" />
-                    )}
-                    <span className="font-semibold text-slate-900 dark:text-slate-100 font-sans">
-                      {lastResult.success ? 'Execution Finished Successfully' : 'Execution Raised Exception'}
-                    </span>
-                    {lastResult.error_type && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-600 dark:text-rose-400 font-mono font-bold border border-rose-500/30">
-                        {lastResult.error_type}
-                      </span>
-                    )}
-                  </div>
+          <div className="flex-1 p-4 overflow-y-auto space-y-4">
+            {!lastResult && !isRunning && (
+              <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
+                <FlaskConical className="w-10 h-10 stroke-1 text-slate-300 dark:text-slate-700 mb-2" />
+                <p className="text-xs font-medium">Ready for Execution</p>
+                <p className="text-[11px] text-slate-400 max-w-[200px] mt-1">
+                  Click 'Run Live Execution' to trace return values, variable modifications, and exception lines.
+                </p>
+              </div>
+            )}
 
-                  <div className="flex items-center gap-2 text-[11px] text-slate-400 font-sans">
-                    <span className="flex items-center gap-1">
-                      <Activity className="w-3 h-3 text-indigo-400" />
-                      {lastResult.events_count} events
-                    </span>
-                    {lastResult.duration_ms !== undefined && (
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-emerald-400" />
-                        {lastResult.duration_ms.toFixed(1)}ms
-                      </span>
-                    )}
-                  </div>
-                </div>
+            {isRunning && (
+              <div className="h-full flex flex-col items-center justify-center text-center p-6 text-indigo-500">
+                <Activity className="w-8 h-8 animate-spin mb-3" />
+                <p className="text-xs font-medium text-slate-700 dark:text-slate-300">Executing with PyTracer...</p>
+                <p className="text-[11px] text-slate-400 mt-1">Recording AST events and call depth in real time</p>
+              </div>
+            )}
 
-                {/* Return Value Display (Success Case) */}
-                {lastResult.success && lastResult.return_val && (
-                  <div className="bg-white dark:bg-[#050811] p-3 rounded-lg border border-slate-200 dark:border-white/[0.08] flex items-center justify-between gap-2 shadow-xs">
-                    <div className="truncate flex-1">
-                      <span className="text-slate-400 text-[11px] mr-2">Return Value:</span>
-                      <span className="font-semibold text-emerald-600 dark:text-emerald-400 text-xs">
-                        {lastResult.return_val}
-                      </span>
+            {lastResult && (
+              <>
+                {/* Result Status Card */}
+                {lastResult.success ? (
+                  <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-xs">
+                    <div className="flex items-center gap-2 font-semibold">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                      <span>Execution Succeeded (200 OK)</span>
                     </div>
+                    <div className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80 mt-1 flex items-center gap-2">
+                      <span>{lastResult.events_count} events recorded</span>
+                      <span>•</span>
+                      <span>{lastResult.duration_ms?.toFixed(1)} ms</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs shadow-xs">
+                    <div className="flex items-center gap-2 font-bold text-rose-600 dark:text-rose-400">
+                      <ShieldAlert className="w-4 h-4 text-rose-500" />
+                      <span>Exception Trapped: {lastResult.error_type || 'Error'}</span>
+                    </div>
+                    <p className="mt-1.5 font-mono text-xs bg-rose-500/10 p-2 rounded border border-rose-500/20 text-rose-800 dark:text-rose-200 break-words">
+                      {lastResult.error_message || lastResult.error}
+                    </p>
+                    {lastResult.error_line && (
+                      <div className="mt-2 text-[11px] font-mono text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+                        <Bug className="w-3.5 h-3.5" />
+                        <span>Failed at Line {lastResult.error_line}</span>
+                        {lastResult.error_file && (
+                          <span className="truncate text-slate-500">({lastResult.error_file.split(/[\\/]/).pop()})</span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Big Action Button to Jump directly to Timeline */}
                     <button
-                      onClick={copyResult}
-                      className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
-                      title="Copy return value"
+                      onClick={onNavigateToHunter}
+                      className="mt-3 w-full py-2 px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
                     >
-                      {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>🎯 Inspect Failure Line in Timeline</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
 
-                {/* Exception & Error Breakdown (Error Case) */}
-                {!lastResult.success && lastResult.error && (
-                  <div className="space-y-2">
-                    <div className="text-rose-700 dark:text-rose-300 text-xs bg-rose-500/15 p-3 rounded-lg border border-rose-500/30 flex flex-col gap-1">
-                      <span className="font-bold text-[11px] uppercase tracking-wider text-rose-500">
-                        Exception Message:
-                      </span>
-                      <span className="font-semibold font-mono">
-                        {lastResult.error_message || lastResult.error}
-                      </span>
+                {/* Return Value Preview */}
+                {lastResult.success && lastResult.return_val && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      <span>Return Value</span>
+                      <button
+                        onClick={copyResult}
+                        className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                        {copied ? 'Copied' : 'Copy'}
+                      </button>
                     </div>
+                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-100 font-mono text-xs overflow-x-auto max-h-48">
+                      <pre>{lastResult.return_val}</pre>
+                    </div>
+                  </div>
+                )}
 
-                    {lastResult.error_traceback && (
-                      <div className="rounded-lg border border-slate-200 dark:border-white/[0.08] overflow-hidden bg-white dark:bg-[#050811]">
-                        <button
-                          onClick={() => setShowTraceback(!showTraceback)}
-                          className="w-full px-3 py-1.5 bg-slate-100/70 dark:bg-slate-900/70 flex items-center justify-between text-left text-[11px] text-slate-600 dark:text-slate-300 font-sans cursor-pointer hover:bg-slate-200/50"
-                        >
-                          <span className="flex items-center gap-1 font-medium">
-                            <Terminal className="w-3 h-3 text-slate-400" />
-                            Python Exception Traceback
-                          </span>
-                          {showTraceback ? (
-                            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-                          ) : (
-                            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                          )}
-                        </button>
-                        {showTraceback && (
-                          <pre className="p-3 text-[11px] text-rose-600 dark:text-rose-400 overflow-x-auto leading-relaxed select-text font-mono max-h-48 overflow-y-auto">
-                            {lastResult.error_traceback}
-                          </pre>
-                        )}
+                {/* Traceback Dropdown */}
+                {lastResult.error_traceback && (
+                  <div className="space-y-1.5">
+                    <button
+                      onClick={() => setShowTraceback((prev) => !prev)}
+                      className="text-xs font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1 hover:underline cursor-pointer"
+                    >
+                      {showTraceback ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                      <span>{showTraceback ? 'Hide Full Traceback' : 'Show Full Python Traceback'}</span>
+                    </button>
+                    {showTraceback && (
+                      <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-rose-300 font-mono text-[11px] leading-relaxed overflow-x-auto max-h-60 select-text">
+                        <pre className="whitespace-pre-wrap">{lastResult.error_traceback}</pre>
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* Flow Analysis Summary Footer */}
-                <div className="mt-3 pt-2 text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between font-sans">
-                  <span>
-                    {lastResult.success
-                      ? '✓ All AST sub-expressions evaluated without uncaught exceptions.'
-                      : '⚠ Uncaught exception trapped by PyTracer and recorded in event timeline.'}
-                  </span>
+                {/* Inspect in Timeline Button */}
+                {lastResult.events_count > 0 && (
                   <button
                     onClick={onNavigateToHunter}
-                    className="text-indigo-600 dark:text-indigo-400 hover:underline font-semibold flex items-center gap-1"
+                    className="w-full py-2.5 px-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 border border-indigo-200 dark:border-indigo-800/60 font-semibold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
                   >
-                    <span>View Timeline</span>
-                    <ArrowRight className="w-3 h-3" />
+                    <span>View All {lastResult.events_count} Events in Timeline</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
                   </button>
-                </div>
-              </div>
-            ) : (
-              <div className="p-8 text-center text-xs text-slate-400 font-mono border border-dashed border-slate-200 dark:border-white/[0.08] rounded-xl bg-slate-100/30 dark:bg-slate-900/20">
-                Click "Run Live & Trace" to execute the target function with arguments and view output analysis.
-              </div>
+                )}
+              </>
             )}
-          </div>
-
-          {/* Bottom Half: Pre-Configured Test Cases Bench */}
-          <div className="flex-1 flex flex-col p-4 overflow-hidden">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-                Pre-Configured Test Scenarios ({testCases.length})
-              </span>
-              <span className="text-[11px] text-slate-400">Click any card to auto-populate and run</span>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              {testCases.map((tc) => {
-                const isErrorTest = tc.name.toLowerCase().includes('raises') || tc.name.toLowerCase().includes('fault');
-                return (
-                  <div
-                    key={tc.id}
-                    className={`p-3 rounded-xl border transition-all flex items-center justify-between gap-3 group shadow-xs ${
-                      isErrorTest
-                        ? 'bg-rose-50/20 dark:bg-[#0d0912]/50 border-slate-200 dark:border-rose-900/20 hover:border-rose-400 dark:hover:border-rose-600'
-                        : 'bg-white dark:bg-[#070b16] border-slate-200 dark:border-white/[0.08] hover:border-indigo-400 dark:hover:border-indigo-600'
-                    }`}
-                  >
-                    <div className="flex-1 truncate">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-medium text-xs text-slate-900 dark:text-slate-100 font-sans">
-                          {tc.name}
-                        </span>
-                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
-                          {tc.function_name}()
-                        </span>
-                        {isErrorTest && (
-                          <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-rose-500/10 text-rose-500 border border-rose-500/20 font-semibold">
-                            FAULT TEST
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] font-mono text-slate-400 truncate">
-                        {JSON.stringify(tc.args)}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={() => loadTestCase(tc)}
-                        disabled={isRunning}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer shadow-xs ${
-                          isErrorTest
-                            ? 'bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
-                            : 'bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800'
-                        }`}
-                        title="Run this scenario live"
-                      >
-                        <Play className="w-3 h-3 fill-current" />
-                        <span>Run</span>
-                      </button>
-                      <button
-                        onClick={() => setTestCases((prev) => prev.filter((x) => x.id !== tc.id))}
-                        className="p-1 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 transition-opacity"
-                        title="Delete scenario"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
           </div>
         </div>
       </div>
+
+      {/* Bottom Panel: Dynamic Test Scenarios */}
+      {testCases.length > 0 && (
+        <div className="h-36 border-t border-slate-200 dark:border-white/[0.08] bg-white/95 dark:bg-[#070b16]/95 backdrop-blur-md p-3 flex flex-col shrink-0 select-none">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 uppercase tracking-wide">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+              Pre-Configured Test Scenarios ({testCases.length})
+            </span>
+            <span className="text-[11px] text-slate-400">Click any card to auto-populate and run execution</span>
+          </div>
+
+          <div className="flex-1 flex gap-2.5 overflow-x-auto pb-1">
+            {testCases.map((tc) => {
+              const isError = tc.id.includes('-err');
+              return (
+                <div
+                  key={tc.id}
+                  onClick={() => loadTestCase(tc)}
+                  className={`min-w-[240px] max-w-[280px] p-2.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between shrink-0 ${
+                    isError
+                      ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200/80 dark:border-rose-900/40 hover:border-rose-500/60'
+                      : 'bg-slate-50 dark:bg-[#0a0f1e] border-slate-200/80 dark:border-white/[0.08] hover:border-indigo-500/60'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate">
+                        {tc.name}
+                      </span>
+                      {isError ? (
+                        <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                          FAULT
+                        </span>
+                      ) : (
+                        <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                          VALID
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] font-mono text-slate-400 mt-1 truncate">
+                      {tc.function_name}()
+                    </div>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">
+                    <span>Run Scenario</span>
+                    <Play className="w-2.5 h-2.5 fill-current" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
-
-export default PlaygroundPage;
