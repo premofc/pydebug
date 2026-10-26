@@ -73,6 +73,7 @@ class PyTracer:
             _INTERNAL_CORE,
             os.path.join(_INTERNAL_ROOT, "server"),
             os.path.join(_INTERNAL_ROOT, "integrations"),
+            os.path.join(_INTERNAL_ROOT, "cli.py"),
             "asyncio",
             "threading",
         ]
@@ -107,6 +108,11 @@ class PyTracer:
     def _trace_fn(self, frame: Any, event: str, arg: Any) -> Any:
         filename = frame.f_code.co_filename
         if not self._should_trace(filename):
+            return None
+
+        # Skip our own AST-instrumentation frames: _spy_eval closures are
+        # compiled in the user's file, so path filtering cannot exclude them.
+        if frame.f_code.co_name == "_spy_eval":
             return None
 
         lineno = frame.f_lineno

@@ -1,7 +1,7 @@
 import ast
-import hashlib
 import importlib.util
 import json
+import logging
 import mimetypes
 import os
 import queue
@@ -14,7 +14,7 @@ import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 if sys.platform == "win32":
     try:
@@ -25,10 +25,50 @@ if sys.platform == "win32":
 
 from pydebug.core.events import TraceSession
 from pydebug.core.tracer import PyTracer, safe_repr
-from pydebug.examples.demo_algorithms import evaluate_claim_rules, compute_risk_score
 from pydebug.server.ai import get_ai_manager
 
+logger = logging.getLogger("pydebug")
+
 UI_DIR = Path(__file__).resolve().parents[1] / "ui"
+
+EXCLUDE_DIRS = {
+    ".venv", "venv", "env", ".git", "__pycache__", "node_modules",
+    "site-packages", "build", "dist", ".pytest_cache", ".idea", ".vscode",
+    "pydebug.egg-info", "pydebug_studio.egg-info", "pydebug.egg-info",
+}
+
+# The pydebug package's own source files are internal tooling, not user code.
+_PYDEBUG_PKG_DIR = Path(__file__).resolve().parents[1]
+
+
+def scan_project_python_files() -> list[Path]:
+    """Recursively scans the current workspace for user project Python files."""
+    cwd = Path.cwd().resolve()
+    pkg_dir = Path(_PYDEBUG_PKG_DIR).resolve()
+    py_files: list[Path] = []
+    for root, dirs, files in os.walk(cwd):
+        dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS and not d.startswith(".")]
+        for f in files:
+            if f.endswith(".py") and not f.startswith("."):
+                pf = (Path(root) / f).resolve()
+                # Skip pydebug's own internal files
+                if pkg_dir == pf or pkg_dir in pf.parents:
+                    continue
+                py_files.append(pf)
+                if len(py_files) >= 200:
+                    return py_files
+    return py_files
+
+
+class QuietThreadingHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        exc_type, _, _ = sys.exc_info()
+        if exc_type in (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            return
+        super().handle_error(request, client_address)
+
 DEFAULT_UI_HTML = UI_DIR / "index.html"
 mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
@@ -40,6 +80,9 @@ mimetypes.add_type("image/svg+xml", ".svg")
 class SessionManager:
     """Thread-safe store for trace sessions and SSE subscriber queues."""
 
+    # Keeps memory bounded: each traced session can be worth megabytes.
+    MAX_SESSIONS = 200
+
     def __init__(self) -> None:
         self.sessions: dict[str, TraceSession] = {}
         self.subscribers: list[queue.Queue[str]] = []
@@ -48,6 +91,11 @@ class SessionManager:
     def add_session(self, session: TraceSession) -> None:
         with self._lock:
             self.sessions[session.id] = session
+            # Evict oldest sessions beyond the retention cap.
+            if len(self.sessions) > self.MAX_SESSIONS:
+                oldest = next(iter(self.sessions))
+                del self.sessions[oldest]
+                logger.info("Evicted oldest session %s to stay under the %d-session cap", oldest, self.MAX_SESSIONS)
             payload = json.dumps({"type": "new_session", "session": session.to_dict()})
             # Notify SSE subscribers
             dead = []
@@ -68,6 +116,11 @@ class SessionManager:
     def get_by_id(self, sess_id: str) -> TraceSession | None:
         with self._lock:
             return self.sessions.get(sess_id)
+
+    def get_all(self) -> list[TraceSession]:
+        """Returns all sessions, newest first."""
+        with self._lock:
+            return list(reversed(list(self.sessions.values())))
 
     def subscribe(self) -> queue.Queue[str]:
         q: queue.Queue[str] = queue.Queue(maxsize=100)
@@ -121,60 +174,53 @@ def infer_session_metadata(session: TraceSession) -> dict[str, Any]:
 
 
 def generate_sample_args(func_name: str, params: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Generates verified (sample_valid, sample_invalid) argument presets for testing."""
-    if func_name == "compute_risk_score":
-        return (
-            {"age": 42, "bmi": 26.5, "smoker": False},
-            {"age": "forty-two", "bmi": 26.5, "smoker": False},
-        )
-    if func_name == "calculate_order_total":
-        return (
-            {
-                "items": [
-                    {"name": "Wireless Mechanical Keyboard", "price": 90.0, "qty": 1},
-                    {"name": "Ergonomic Gel Mousepad", "price": 25.0, "qty": 2},
-                ],
-                "discount_code": "VIP20",
-            },
-            {
-                "items": [{"name": "Faulty Item Without Price", "qty": 1}],
-                "discount_code": "INVALID_CODE_999",
-            },
-        )
-    if func_name == "divide_and_process":
-        return (
-            {"numerator": 120.0, "denominator": 4.0},
-            {"numerator": 120.0, "denominator": 0.0},
-        )
-    if func_name == "evaluate_claim_rules":
-        return (
-            {"claim_id": "CLM-1001", "amount": 4200.0, "risk_score": 1.25},
-            {"claim_id": "CLM-ERR", "amount": -850.0, "risk_score": 1.25},
-        )
-
+    """Dynamically infers realistic valid and invalid arguments for any project function."""
     valid: dict[str, Any] = {}
     invalid: dict[str, Any] = {}
+
     for p in params:
         name = p["name"]
         ann = (p.get("annotation") or "").lower()
-        if "list" in ann:
-            valid[name] = [{"id": 1, "name": "Sample Item", "price": 50.0}]
-            invalid[name] = "invalid_string_not_list"
-        elif "dict" in ann:
-            valid[name] = {"id": 1, "key": "value"}
-            invalid[name] = 12345
+        default = p.get("default")
+
+        if default and default != "None":
+            try:
+                valid[name] = default.strip("'\"")
+            except Exception:
+                valid[name] = default
         elif "int" in ann:
-            valid[name] = 25
-            invalid[name] = "invalid_int_string"
+            valid[name] = 10
         elif "float" in ann:
-            valid[name] = 19.99
-            invalid[name] = "invalid_float_string"
+            valid[name] = 25.5
         elif "bool" in ann:
             valid[name] = True
+        elif "list" in ann:
+            valid[name] = ["item_1", "item_2"]
+        elif "dict" in ann:
+            valid[name] = {"key": "value"}
+        elif any(k in name.lower() for k in ("id", "code", "key")):
+            valid[name] = "REC-001"
+        elif any(k in name.lower() for k in ("name", "title")):
+            valid[name] = "Sample Name"
+        elif any(k in name.lower() for k in ("query", "term", "disease", "procedure")):
+            valid[name] = "Fracture"
+        else:
+            valid[name] = "sample_value"
+
+        # Generate invalid argument specifically designed to trigger an exception
+        if "int" in ann:
+            invalid[name] = "invalid_string_for_int"
+        elif "float" in ann:
+            invalid[name] = "invalid_string_for_float"
+        elif "list" in ann:
+            invalid[name] = 12345
+        elif "dict" in ann:
+            invalid[name] = "invalid_not_dict"
+        elif "bool" in ann:
             invalid[name] = [1, 2, 3]
         else:
-            valid[name] = "test_value"
             invalid[name] = None
+
     return valid, invalid
 
 
@@ -312,37 +358,64 @@ class PyDebugHandler(BaseHTTPRequestHandler):
 
     def _serve_sessions_list(self) -> None:
         """Returns rich metadata for all recorded API endpoints, tools, and scripts."""
-        mgr = get_session_manager()
-        with mgr._lock:
-            items = [infer_session_metadata(s) for s in reversed(list(mgr.sessions.values()))]
-        body = json.dumps(items).encode("utf-8")
-        self._send_json(200, body)
+        items = [infer_session_metadata(s) for s in get_session_manager().get_all()]
+        self._send_json(200, json.dumps(items).encode("utf-8"))
 
     def _serve_session(self, sess_id: str | None) -> None:
         mgr = get_session_manager()
         sess = mgr.get_by_id(sess_id) if sess_id else mgr.get_latest()
         if not sess:
-            self.send_error(404, "Session not found")
+            # No session yet is a normal empty state for a fresh viewer, not an error.
+            self._send_json(200, json.dumps({"events": []}).encode("utf-8"))
             return
         body = sess.to_json().encode("utf-8")
         self._send_json(200, body)
 
+    # Workspace function discovery is expensive (recursive scan + signature
+    # parsing of up to 200 files). Dashboard loads request it on every visit,
+    # so results are cached briefly.
+    FUNCTIONS_CACHE_TTL = 10.0
+    _functions_cache: tuple[float, bytes] | None = None
+
     def _serve_functions(self) -> None:
-        mgr = get_session_manager()
-        sess = mgr.get_latest()
-        files: list[str] = list(sess.files) if sess and sess.files else []
+        cls = type(self)
+        if cls._functions_cache is not None:
+            fetched_at, body = cls._functions_cache
+            if time.time() - fetched_at < cls.FUNCTIONS_CACHE_TTL:
+                self._send_json(200, body)
+                return
 
-        demo_file = Path(__file__).resolve().parent.parent / "examples" / "demo_algorithms.py"
-        if demo_file.exists() and str(demo_file) not in files:
-            files.append(str(demo_file))
+        sess = get_session_manager().get_latest()
+        user_files: list[str] = []
 
-        for p in Path.cwd().glob("*.py"):
-            if not p.name.startswith(".") and str(p) not in files:
-                files.append(str(p))
+        def add_file(path: str) -> None:
+            """Adds a user file to the discovery list; skips tests and pydebug internals."""
+            p = Path(path)
+            name = p.name.lower()
+            parent = p.parent.name.lower()
+            is_test = (
+                name.startswith("test_") or name.endswith("_test.py") or name == "tests.py"
+                or parent in ("tests", "test")
+            )
+            is_internal = (
+                p == _PYDEBUG_PKG_DIR or _PYDEBUG_PKG_DIR in p.parents
+                or name == "scenarios.py"  # simulator demo logic
+            )
+            if not is_test and not is_internal and path not in user_files:
+                user_files.append(path)
+
+        # Functions actually executed in live traces come first
+        if sess and sess.files:
+            for f in sess.files:
+                add_file(f)
+
+        # Plus everything discoverable in the current workspace
+        for pf in scan_project_python_files():
+            add_file(str(pf))
 
         discovered: list[dict[str, Any]] = []
         seen = set()
-        for f in files:
+        for f in user_files:
             funcs = extract_function_signatures(f)
             for fn in funcs:
                 key = (fn["file_path"], fn["name"])
@@ -351,13 +424,19 @@ class PyDebugHandler(BaseHTTPRequestHandler):
                     discovered.append(fn)
 
         body = json.dumps(discovered).encode("utf-8")
+        cls._functions_cache = (time.time(), body)
         self._send_json(200, body)
+
+    def _read_json_body(self) -> dict[str, Any]:
+        """Reads and parses the JSON request body (empty dict when no body)."""
+        length = int(self.headers.get("Content-Length", 0))
+        if length <= 0:
+            return {}
+        return json.loads(self.rfile.read(length).decode("utf-8"))
 
     def _handle_execute_function(self) -> None:
         try:
-            length = int(self.headers.get("Content-Length", 0))
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
-
+            payload = self._read_json_body()
             file_path = payload.get("file_path")
             func_name = payload.get("function_name")
             kwargs = payload.get("args", {})
@@ -423,78 +502,51 @@ class PyDebugHandler(BaseHTTPRequestHandler):
             self._send_json(200, json.dumps(resp_data).encode("utf-8"))
 
         except Exception as e:
+            logger.exception("Function execution failed")
             self._send_json(500, json.dumps({"error": str(e)}).encode("utf-8"))
 
     def _handle_simulate_request(self) -> None:
         """Simulates an incoming live API endpoint or MCP tool call with complete line-by-line tracing."""
-        try:
-            length = int(self.headers.get("Content-Length", 0))
-            payload = json.loads(self.rfile.read(length).decode("utf-8")) if length > 0 else {}
-            scenario = payload.get("scenario", "api_claim")
+        # Each scenario maps to a title and a traceable business-logic function
+        # (kept in examples/ so the tracer records them — server/ is excluded).
+        from pydebug.examples import scenarios
 
-            if scenario == "api_checkout":
-                title = "POST /api/v1/checkout/calculate"
-                session = TraceSession(title=title)
-                tracer = PyTracer(session=session)
-                tracer.start()
-                try:
-                    # Execute checkout logic
-                    items = [
-                        {"name": "Mechanical Keyboard RGB", "price": 110.0, "qty": 1},
-                        {"name": "Wrist Rest Foam", "price": 20.0, "qty": 1},
-                    ]
-                    subtotal = sum(i["price"] * i["qty"] for i in items)
-                    discount = subtotal * 0.20
-                    tax = (subtotal - discount) * 0.08
-                    final_amt = round(subtotal - discount + tax, 2)
-                finally:
-                    tracer.stop()
-            elif scenario == "mcp_tool":
-                title = "MCP Tool: claimcare_verify_waiting_period"
-                session = TraceSession(title=title)
-                tracer = PyTracer(session=session)
-                tracer.start()
-                try:
-                    disease_name = "Cataract"
-                    waiting_period_months = 24
-                    policy_age_months = 36
-                    is_covered = policy_age_months >= waiting_period_months
-                    status = "COVERED" if is_covered else "WAITING_PERIOD_ACTIVE"
-                finally:
-                    tracer.stop()
-            else:
-                title = "POST /api/claims/adjudicate"
-                session = TraceSession(title=title)
-                tracer = PyTracer(session=session)
-                tracer.start()
-                try:
-                    risk = compute_risk_score(age=45, bmi=28.4, smoker=False)
-                    res = evaluate_claim_rules(claim_id="CLM-902", amount=4800.0, risk_score=risk)
-                finally:
-                    tracer.stop()
+        scenarios_map: dict[str, tuple[str, Callable[[], object]]] = {
+            "api_checkout": ("POST /api/v1/checkout/calculate", scenarios.simulate_checkout_calculation),
+            "mcp_tool": ("MCP Tool: claimcare_verify_waiting_period", scenarios.simulate_waiting_period_check),
+        }
+        try:
+            payload = self._read_json_body()
+            title, runner = scenarios_map.get(
+                payload.get("scenario", "api_claim"),
+                ("POST /api/claims/adjudicate", scenarios.simulate_claim_adjudication),
+            )
+
+            session = TraceSession(title=title)
+            tracer = PyTracer(session=session, include_paths=[str(Path(scenarios.__file__).parent)])
+            tracer.start()
+            try:
+                runner()
+            finally:
+                tracer.stop()
 
             get_session_manager().add_session(session)
-            resp = {
-                "success": True,
-                "session": session.to_dict(),
-                "summary": infer_session_metadata(session),
-            }
+            resp = {"success": True, "session": session.to_dict(), "summary": infer_session_metadata(session)}
             self._send_json(200, json.dumps(resp).encode("utf-8"))
         except Exception as e:
+            logger.exception("Simulation failed")
             self._send_json(500, json.dumps({"error": str(e)}).encode("utf-8"))
 
     def _handle_add_session(self) -> None:
         try:
-            length = int(self.headers.get("Content-Length", 0))
-            raw = self.rfile.read(length)
-            data = json.loads(raw.decode("utf-8"))
+            data = self._read_json_body()
             session = TraceSession.from_dict(data)
             get_session_manager().add_session(session)
             resp = json.dumps({"ok": True, "id": session.id, "title": session.title}).encode("utf-8")
             self._send_json(200, resp)
         except Exception as e:
-            err = json.dumps({"error": str(e)}).encode("utf-8")
-            self._send_json(400, err)
+            logger.exception("Invalid session payload")
+            self._send_json(400, json.dumps({"error": str(e)}).encode("utf-8"))
 
     def _serve_ai_config(self) -> None:
         mgr = get_ai_manager()
@@ -509,8 +561,7 @@ class PyDebugHandler(BaseHTTPRequestHandler):
 
     def _handle_save_ai_config(self) -> None:
         try:
-            length = int(self.headers.get("Content-Length", 0))
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            payload = self._read_json_body()
             mgr = get_ai_manager()
             updated = mgr.save_config(
                 provider=payload.get("provider", "ollama"),
@@ -521,12 +572,12 @@ class PyDebugHandler(BaseHTTPRequestHandler):
             )
             self._send_json(200, json.dumps({"ok": True, "config": updated.to_public_dict()}).encode("utf-8"))
         except Exception as e:
+            logger.exception("Saving AI config failed")
             self._send_json(400, json.dumps({"error": str(e)}).encode("utf-8"))
 
     def _handle_test_ai_connection(self) -> None:
         try:
-            length = int(self.headers.get("Content-Length", 0))
-            payload = json.loads(self.rfile.read(length).decode("utf-8")) if length > 0 else {}
+            payload = self._read_json_body()
             mgr = get_ai_manager()
             res = mgr.test_connection(
                 provider=payload.get("provider"),
@@ -537,13 +588,12 @@ class PyDebugHandler(BaseHTTPRequestHandler):
             status_code = 200 if res.get("success") else 400
             self._send_json(status_code, json.dumps(res).encode("utf-8"))
         except Exception as e:
+            logger.exception("AI connection test failed")
             self._send_json(500, json.dumps({"success": False, "message": str(e)}).encode("utf-8"))
 
     def _handle_ai_explain_line(self) -> None:
         try:
-            length = int(self.headers.get("Content-Length", 0))
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
-
+            payload = self._read_json_body()
             func = payload.get("func", "unknown")
             line = payload.get("line", 0)
             src = payload.get("src", "")
@@ -564,6 +614,7 @@ class PyDebugHandler(BaseHTTPRequestHandler):
             )
             self._send_json(200, json.dumps(result).encode("utf-8"))
         except Exception as e:
+            logger.exception("AI explanation failed")
             self._send_json(500, json.dumps({"error": str(e)}).encode("utf-8"))
 
     def _serve_sse_stream(self) -> None:
@@ -611,11 +662,14 @@ def serve_trace(
     if session:
         get_session_manager().add_session(session)
 
-    server = ThreadingHTTPServer(("0.0.0.0", port), PyDebugHandler)
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(name)s: %(message)s")
+
+    server = QuietThreadingHTTPServer(("0.0.0.0", port), PyDebugHandler)
     url = f"http://127.0.0.1:{port}"
-    print(f"\n[PyDebug] Live Studio online: {url}")
+    logger.info("Live Studio online: %s", url)
     ai = get_ai_manager()
-    print(f"[PyDebug] AI Co-Pilot: Provider={ai.config.provider.upper()}, Model={ai.config.model} ({ai.config.base_url})")
+    logger.info("AI Co-Pilot: Provider=%s, Model=%s (%s)", ai.config.provider.upper(), ai.config.model, ai.config.base_url)
 
     if auto_open:
         try:
@@ -628,7 +682,7 @@ def serve_trace(
             server.serve_forever()
         except KeyboardInterrupt:
             server.server_close()
-            print("\n[PyDebug] Server stopped.")
+            logger.info("Server stopped.")
     else:
         t = threading.Thread(target=server.serve_forever, daemon=True)
         t.start()

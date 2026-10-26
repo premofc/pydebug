@@ -2,6 +2,8 @@ import argparse
 import json
 import runpy
 import sys
+import threading
+import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -17,66 +19,85 @@ from pydebug.core.tracer import PyTracer
 from pydebug.server.app import serve_trace
 
 
-def auto_patch_asgi() -> None:
-    """Automatically injects PyDebugMiddleware into any Starlette or FastAPI application."""
-    try:
-        from starlette.applications import Starlette
-        from pydebug.integrations.fastapi import PyDebugMiddleware
+class LiveSessionSync:
+    """Streams trace session updates in real-time to the PyDebug Studio server while code executes."""
 
-        orig_build = Starlette.build_middleware_stack
+    # Small sessions re-send freely on every tick. Larger ones only re-send when
+    # they have grown by 50% since the last send; re-sending the full snapshot
+    # every tick would make the total transfer O(n^2) in the number of events
+    # and slow traced programs down dramatically.
+    FREE_STREAM_LIMIT = 3000
 
-        def patched_build(self):
-            # Check if PyDebugMiddleware already present
-            has_mw = any(
-                getattr(m, "cls", None) is PyDebugMiddleware or m is PyDebugMiddleware
-                for m in self.user_middleware
+    def __init__(self, tracer: PyTracer, port: int, title: str) -> None:
+        self.tracer = tracer
+        self.port = port
+        self.title = title
+        self.stop_event = threading.Event()
+        self.thread: threading.Thread | None = None
+        self.last_sent_count = 0
+        self.next_send_threshold = self.FREE_STREAM_LIMIT
+        self.connected = False
+
+    def check_server(self) -> bool:
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{self.port}/api/health")
+            with urllib.request.urlopen(req, timeout=0.6) as resp:
+                return resp.status == 200
+        except Exception:
+            return False
+
+    def start(self) -> None:
+        if self.check_server():
+            self.connected = True
+            print(f"✨ [PyDebug] Live real-time stream connected to Studio at http://127.0.0.1:{self.port}")
+            self.thread = threading.Thread(target=self._run_loop, daemon=True)
+            self.thread.start()
+
+    def sync_snapshot(self) -> None:
+        if not self.connected:
+            return
+        sess = self.tracer.session
+        curr_count = len(sess.events)
+        if curr_count <= self.last_sent_count:
+            return
+        if curr_count > self.FREE_STREAM_LIMIT and curr_count < self.next_send_threshold:
+            return
+        self.last_sent_count = curr_count
+        self.next_send_threshold = curr_count + max(self.FREE_STREAM_LIMIT, curr_count // 2)
+        try:
+            sess.title = self.title
+            sess.compute_stats()
+            data = json.dumps(sess.to_dict()).encode("utf-8")
+            post_req = urllib.request.Request(
+                f"http://127.0.0.1:{self.port}/api/sessions",
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
             )
-            if not has_mw:
-                self.add_middleware(PyDebugMiddleware)
-            return orig_build(self)
+            with urllib.request.urlopen(post_req, timeout=10.0):
+                pass
+        except Exception:
+            # Sending failed: allow the next tick to retry this snapshot.
+            self.last_sent_count = 0
+            if curr_count > self.FREE_STREAM_LIMIT:
+                self.next_send_threshold = 0
 
-        Starlette.build_middleware_stack = patched_build
-    except ImportError:
-        pass
+    def _run_loop(self) -> None:
+        while not self.stop_event.is_set():
+            time.sleep(0.8)
+            self.sync_snapshot()
+
+    def stop(self) -> None:
+        self.stop_event.set()
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=1.0)
+        # Final flush
+        self.sync_snapshot()
 
 
 def cmd_run(args: argparse.Namespace) -> None:
     cwd = Path.cwd().resolve()
     include_paths = [str(cwd)]
-
-    is_module = args.module or (not args.file.endswith(".py") and not Path(args.file).exists())
-
-    if is_module:
-        mod_name = args.file
-        print(f"⚡ [PyDebug] Tracing module {mod_name} in {cwd} ...")
-        tracer = PyTracer(include_paths=include_paths)
-        tracer.start()
-        sys.argv = [mod_name, *args.script_args]
-        try:
-            runpy.run_module(mod_name, run_name="__main__", alter_sys=True)
-        finally:
-            session = tracer.stop()
-            session.title = f'Module: {mod_name}'
-            session.compute_stats()
-    else:
-        target = Path(args.file).resolve()
-        if not target.exists():
-            print(f"Error: file not found: {target}", file=sys.stderr)
-            sys.exit(1)
-
-        include_paths.extend([str(target), str(target.parent)])
-        print(f"⚡ [PyDebug] Tracing {target.name} ...")
-        tracer = PyTracer(include_paths=include_paths)
-        tracer.start()
-        sys.argv = [str(target), *args.script_args]
-        try:
-            runpy.run_path(str(target), run_name="__main__")
-        finally:
-            session = tracer.stop()
-            session.title = f'Script: {target.name}'
-            session.compute_stats()
-
-    print(f"✨ [PyDebug] Execution finished: {len(session.events)} events recorded.")
 
     # Check if a listener server is already running on the given port
     is_server_running = False
@@ -88,22 +109,65 @@ def cmd_run(args: argparse.Namespace) -> None:
     except Exception:
         is_server_running = False
 
-    if is_server_running:
+    # If no server is running yet and UI is wanted, launch Studio in the background
+    if not is_server_running and not args.no_ui:
+        print(f"⚡ [PyDebug] Starting live Studio server on port {args.port} ...")
+        serve_trace(session=None, port=args.port, auto_open=not args.no_open, block=False)
+        time.sleep(0.5)
+
+    is_module = args.module or (not args.file.endswith(".py") and not Path(args.file).exists())
+
+    if is_module:
+        mod_name = args.file
+        print(f"⚡ [PyDebug] Tracing module {mod_name} in {cwd} ...")
+        tracer = PyTracer(include_paths=include_paths)
+        syncer = LiveSessionSync(tracer, port=args.port, title=f"Module: {mod_name}")
+        syncer.start()
+        tracer.start()
+        sys.argv = [mod_name, *args.script_args]
         try:
-            data = json.dumps(session.to_dict()).encode("utf-8")
-            post_req = urllib.request.Request(
-                f"http://127.0.0.1:{args.port}/api/sessions",
-                data=data,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(post_req, timeout=3.0) as post_resp:
-                print(f"✨ [PyDebug] Sent trace session directly to live dashboard at http://127.0.0.1:{args.port}")
-        except Exception as e:
-            print(f"⚠️ [PyDebug] Could not stream session to existing server: {e}")
+            runpy.run_module(mod_name, run_name="__main__", alter_sys=True)
+        finally:
+            syncer.stop()
+            session = tracer.stop()
+            session.title = f"Module: {mod_name}"
+            session.compute_stats()
     else:
-        if not args.no_ui:
-            serve_trace(session, port=args.port, auto_open=not args.no_open, block=True)
+        target = Path(args.file).resolve()
+        if not target.exists():
+            print(f"Error: file not found: {target}", file=sys.stderr)
+            sys.exit(1)
+
+        include_paths.extend([str(target), str(target.parent)])
+        print(f"⚡ [PyDebug] Tracing {target.name} ...")
+        tracer = PyTracer(include_paths=include_paths)
+        syncer = LiveSessionSync(tracer, port=args.port, title=f"Script: {target.name}")
+        syncer.start()
+        tracer.start()
+        sys.argv = [str(target), *args.script_args]
+        try:
+            runpy.run_path(str(target), run_name="__main__")
+        finally:
+            syncer.stop()
+            session = tracer.stop()
+            session.title = f"Script: {target.name}"
+            session.compute_stats()
+
+    print(f"✨ [PyDebug] Execution finished: {len(session.events)} events recorded.")
+
+    # Final sync check if server is running (full snapshot; large traces need a generous timeout)
+    try:
+        data = json.dumps(session.to_dict()).encode("utf-8")
+        post_req = urllib.request.Request(
+            f"http://127.0.0.1:{args.port}/api/sessions",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(post_req, timeout=60.0) as post_resp:
+            print(f"✨ [PyDebug] Trace session synced to live dashboard at http://127.0.0.1:{args.port}")
+    except Exception:
+        print(f"⚠️ [PyDebug] Final sync failed: {len(session.events)} events remain in this process only.")
 
 
 def cmd_demo(args: argparse.Namespace) -> None:

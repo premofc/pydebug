@@ -89,9 +89,11 @@ def _spy_eval(val: Any, expr_src: str, lineno: int, col_start: int, col_end: int
 class ExpressionTransformer(ast.NodeTransformer):
     """Walks the AST and wraps sub-expressions in `_spy_eval(...)` calls."""
 
-    def __init__(self, source_lines: list[str]) -> None:
+    def __init__(self, source_lines: list[str], lineno_offset: int = 0) -> None:
         super().__init__()
         self.source_lines = source_lines
+        # Added to recorded line numbers so they match the real source file.
+        self.lineno_offset = lineno_offset
 
     def _extract_source(self, node: ast.AST) -> str:
         try:
@@ -109,7 +111,7 @@ class ExpressionTransformer(ast.NodeTransformer):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_spy_eval":
             return node
 
-        lineno = getattr(node, "lineno", 0)
+        lineno = getattr(node, "lineno", 0) + self.lineno_offset
         col_start = getattr(node, "col_offset", 0)
         col_end = getattr(node, "end_col_offset", col_start + 10)
         src_text = self._extract_source(node)
@@ -126,7 +128,13 @@ class ExpressionTransformer(ast.NodeTransformer):
             ],
             keywords=[],
         )
+        # Give every constructed node a real location. Bare nodes would be
+        # stamped with the line-offset value by ast.increment_lineno later
+        # (it fills missing linenos with 0 + n), producing phantom line events.
         ast.copy_location(wrapped, node)
+        ast.copy_location(wrapped.func, node)
+        for meta_arg in wrapped.args[1:]:
+            ast.copy_location(meta_arg, node)
         return wrapped
 
     def visit_BinOp(self, node: ast.BinOp) -> ast.AST:
@@ -165,9 +173,24 @@ def inspect_expressions(fn: Callable[..., Any]) -> Callable[..., Any]:
     try:
         src = inspect.getsource(fn)
         lines = src.splitlines()
-        parsed = ast.parse(src)
-        transformer = ExpressionTransformer(lines)
-        transformed = transformer.visit(parsed)
+        fn_node = next(n for n in ast.parse(src).body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))
+
+        # Cut the decorator lines out of the snippet. Compilation must not
+        # re-execute them: the decorator would call inspect_expressions again
+        # on the transformed function, wrapping it beyond recognition.
+        num_dec_lines = getattr(fn_node, "lineno", 1) - 1
+        body_lines = lines[num_dec_lines:]
+        body_src = "\n".join(body_lines)
+
+        # Since Python 3.8, co_firstlineno points at the first decorator, so
+        # the real `def` line is that plus the decorator lines we removed.
+        # Shift every AST line number onto the real file coordinates so both
+        # the compiled code object and captured expressions report real lines.
+        lineno_offset = fn.__code__.co_firstlineno + num_dec_lines - 1
+
+        transformer = ExpressionTransformer(body_lines, lineno_offset=lineno_offset)
+        transformed = transformer.visit(ast.parse(body_src))
+        ast.increment_lineno(transformed, lineno_offset)
         ast.fix_missing_locations(transformed)
 
         closure_dict: dict[str, Any] = {

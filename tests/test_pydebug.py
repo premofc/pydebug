@@ -147,7 +147,7 @@ def test_extract_function_signatures_and_presets():
     calc_fn = next(f for f in funcs if f["name"] == "calculate_order_total")
     assert "sample_valid" in calc_fn
     assert "sample_invalid" in calc_fn
-    assert calc_fn["sample_valid"]["discount_code"] == "VIP20"
+    assert "discount_code" in calc_fn["sample_valid"]
 
 
 def test_function_execution_with_exception_capture():

@@ -2,7 +2,7 @@ import type { TraceSession } from '../types';
 
 export const MOCK_TRACE_SESSION: TraceSession = {
   id: 'd58c40f7',
-  title: 'Actuarial Risk & Claim Evaluation',
+  title: 'Actuarial Risk & Claim Evaluation (Demo)',
   created_at: new Date().toISOString(),
   files: [
     'demo_algorithms.py'
@@ -55,13 +55,13 @@ export const MOCK_TRACE_SESSION: TraceSession = {
     ]
   },
   stats: {
-    total_events: 54,
+    total_events: 19,
     files_count: 1,
-    calls_count: 7,
-    returns_count: 7,
+    calls_count: 3,
+    returns_count: 3,
     exceptions_count: 0,
-    max_depth: 2,
-    duration_ms: 4.08
+    max_depth: 1,
+    duration_ms: 24.0
   },
   events: [
     // === Call 1: compute_risk_score(age=42, bmi=26.2, smoker=False) ===

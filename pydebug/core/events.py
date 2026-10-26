@@ -155,10 +155,10 @@ class TraceSession:
             "id": self.id,
             "title": self.title,
             "created_at": self.created_at,
-            "files": self.files,
-            "file_sources": self.file_sources,
-            "events": [asdict(e) for e in self.events],
-            "stats": self.stats,
+            "files": list(self.files),
+            "file_sources": dict(self.file_sources),
+            "events": [asdict(e) for e in list(self.events)],
+            "stats": dict(self.stats),
         }
 
     def to_json(self, indent: int | None = None) -> str:

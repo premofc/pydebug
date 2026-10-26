@@ -9,6 +9,15 @@ export default defineConfig({
     tailwindcss(),
     react(),
   ],
+  server: {
+    proxy: {
+      // Forward API calls to the PyDebug Studio backend during development
+      '/api': {
+        target: 'http://127.0.0.1:8899',
+        changeOrigin: true,
+      },
+    },
+  },
   build: {
     outDir: fileURLToPath(new URL('../pydebug/ui', import.meta.url)),
     emptyOutDir: true,

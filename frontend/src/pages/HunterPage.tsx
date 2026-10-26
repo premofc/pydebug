@@ -190,7 +190,7 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
 
   // Get current file code lines
   const currentFileIdx = currentEvent?.file_idx ?? 0;
-  const currentFileName = session.files[currentFileIdx] || 'demo_algorithms.py';
+  const currentFileName = session.files[currentFileIdx] || 'app.py';
   const displayFileName = currentFileName.split(/[\\/]/).pop() || currentFileName;
   const sourceLines = session.file_sources[currentFileIdx] || [];
 
@@ -765,7 +765,7 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
               {aiLoading ? (
                 <div className="p-8 text-center text-xs text-slate-400 flex flex-col items-center gap-2">
                   <RefreshCw className="w-5 h-5 animate-spin text-indigo-500" />
-                  <span>Synthesizing live variable state with Ollama...</span>
+                  <span>Synthesizing live variable state with {aiConfig?.provider || 'your'} AI provider...</span>
                 </div>
               ) : aiExplanation ? (
                 <div className="space-y-3">
@@ -816,7 +816,7 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
                 </div>
               ) : (
                 <div className="p-8 text-center text-xs text-slate-400 font-mono border border-dashed border-slate-200 dark:border-white/[0.08] rounded-lg">
-                  Click the button above to explain the active line with Ollama.
+                  Click the button above to explain the active line with {aiConfig?.provider || 'your'} AI provider.
                 </div>
               )}
             </div>

@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pydebug-studio"
-version = "0.1.0"
+version = "0.1.1"
 description = "Next-Gen visual Python debugger and live runtime tracer with Swagger-grade dashboard, Hunter VCR timeline, and Birdseye AST expression inspection."
 readme = "README.md"
 authors = [{ name = "Premnathan", email = "premnath.4518@gmail.com" }]
 license = "MIT"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = []
 keywords = ["debugger", "tracer", "hunter", "birdseye", "fastapi", "starlette", "mcp", "profiler"]
 classifiers = [
@@ -17,7 +17,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Debuggers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",

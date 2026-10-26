@@ -14,6 +14,9 @@ export const App: React.FC = () => {
   });
   const [currentPage, setCurrentPage] = useState<'dashboard' | 'birdseye' | 'hunter' | 'playground'>('dashboard');
   const [session, setSession] = useState<TraceSession>(MOCK_TRACE_SESSION);
+  // The mock is only a placeholder for the Birdseye/Hunter views until real
+  // trace data arrives; the navbar must not present it as a real session.
+  const [hasRealSession, setHasRealSession] = useState(false);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
   const [aiConfig, setAiConfig] = useState<AIProviderConfig | null>(null);
@@ -69,6 +72,7 @@ export const App: React.FC = () => {
           const data = await res.json();
           if (data && data.events && data.events.length > 0) {
             setSession(data);
+            setHasRealSession(true);
             setIsConnected(true);
             const firstEv = data.events[0];
             if (firstEv) {
@@ -95,6 +99,7 @@ export const App: React.FC = () => {
           const payload = JSON.parse(e.data);
           if (payload.type === 'new_session' && payload.session) {
             setSession(payload.session);
+            setHasRealSession(true);
             setIsConnected(true);
           }
         } catch (err) {
@@ -142,11 +147,15 @@ export const App: React.FC = () => {
         onToggleTheme={toggleTheme}
         currentPage={currentPage}
         onPageChange={setCurrentPage}
-        stats={{
-          total_events: session.stats?.total_events || session.events.length,
-          duration_ms: session.stats?.duration_ms || 0,
-          max_depth: session.stats?.max_depth || 1,
-        }}
+        stats={
+          hasRealSession
+            ? {
+                total_events: session.stats?.total_events || session.events.length,
+                duration_ms: session.stats?.duration_ms || 0,
+                max_depth: session.stats?.max_depth || 1,
+              }
+            : { total_events: 0, duration_ms: 0, max_depth: 0 }
+        }
         isConnected={isConnected}
         sessionId={session.id}
         activeFileName={activeFileInfo.fileName}
@@ -159,6 +168,7 @@ export const App: React.FC = () => {
         {currentPage === 'dashboard' && (
           <DashboardPage
             onSelectSession={handleSelectSession}
+            aiConfig={aiConfig}
           />
         )}
         {currentPage === 'birdseye' && (

@@ -51,78 +51,10 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
   } | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
 
-  // Pre-configured rich test cases covering both SUCCESS and EXCEPTION scenarios
-  const [testCases, setTestCases] = useState<TestCase[]>([
-    {
-      id: 'tc-order-valid',
-      name: 'Order Calculation with VIP20 (Success)',
-      function_name: 'calculate_order_total',
-      file_path: '',
-      args: {
-        items: [
-          { name: 'Wireless Mechanical Keyboard', price: 90.0, qty: 1 },
-          { name: 'Ergonomic Gel Mousepad', price: 25.0, qty: 2 },
-        ],
-        discount_code: 'VIP20',
-      },
-      expected_return: '120.96',
-    },
-    {
-      id: 'tc-order-err-empty',
-      name: 'Empty Items List (Raises ValueError)',
-      function_name: 'calculate_order_total',
-      file_path: '',
-      args: {
-        items: [],
-        discount_code: 'VIP20',
-      },
-    },
-    {
-      id: 'tc-order-err-missing-key',
-      name: 'Corrupted Item Missing Price (Raises KeyError)',
-      function_name: 'calculate_order_total',
-      file_path: '',
-      args: {
-        items: [{ name: 'Faulty Item Without Price', qty: 1 }],
-        discount_code: 'INVALID_CODE',
-      },
-    },
-    {
-      id: 'tc-risk-valid',
-      name: 'Standard Actuarial Risk (Success)',
-      function_name: 'compute_risk_score',
-      file_path: '',
-      args: {
-        age: 42,
-        bmi: 26.5,
-        smoker: false,
-      },
-      expected_return: '1.76',
-    },
-    {
-      id: 'tc-risk-err-type',
-      name: 'Wrong Age Type: String Passed (Raises TypeError)',
-      function_name: 'compute_risk_score',
-      file_path: '',
-      args: {
-        age: 'forty-two',
-        bmi: 26.5,
-        smoker: false,
-      },
-    },
-    {
-      id: 'tc-div-err-zero',
-      name: 'Denominator Zero (Raises ZeroDivisionError)',
-      function_name: 'divide_and_process',
-      file_path: '',
-      args: {
-        numerator: 100.0,
-        denominator: 0.0,
-      },
-    },
-  ]);
+  // Test cases dynamically populated from discovered project functions
+  const [testCases, setTestCases] = useState<TestCase[]>([]);
 
-  // Fetch discoverable functions from backend
+  // Fetch discoverable project functions from backend and populate dynamic test cases
   useEffect(() => {
     const fetchFuncs = async () => {
       try {
@@ -136,6 +68,32 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
               setArgsJson(JSON.stringify(data[0].sample_valid, null, 2));
             } else {
               setArgsJson(JSON.stringify(generateFallbackTemplate(data[0]), null, 2));
+            }
+
+            // Dynamically generate test cases for the user's project functions
+            const dynamicCases: TestCase[] = [];
+            data.slice(0, 8).forEach((fn) => {
+              if (fn.sample_valid && Object.keys(fn.sample_valid).length > 0) {
+                dynamicCases.push({
+                  id: `tc-${fn.name}-valid`,
+                  name: `${fn.name} (Valid Input)`,
+                  function_name: fn.name,
+                  file_path: fn.file_path,
+                  args: fn.sample_valid,
+                });
+              }
+              if (fn.sample_invalid && Object.keys(fn.sample_invalid).length > 0) {
+                dynamicCases.push({
+                  id: `tc-${fn.name}-err`,
+                  name: `${fn.name} (Trigger Exception)`,
+                  function_name: fn.name,
+                  file_path: fn.file_path,
+                  args: fn.sample_invalid,
+                });
+              }
+            });
+            if (dynamicCases.length > 0) {
+              setTestCases(dynamicCases);
             }
           }
         }

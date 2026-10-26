@@ -10,27 +10,13 @@ import {
   Clock, 
   Layers 
 } from 'lucide-react';
-import type { TraceSession, TraceEvent, SubExpression, PinnedExpression } from '../types';
+import type { TraceSession, SubExpression, PinnedExpression } from '../types';
+import { buildCallRecords, buildLineExprs } from '../utils/calls';
+import type { CallRecord } from '../utils/calls';
 
 interface BirdseyePageProps {
   session: TraceSession;
   onCallChange?: (fileName: string, funcName: string) => void;
-}
-
-interface CallRecord {
-  id: string;
-  func: string;
-  file_idx: number;
-  startSeq: number;
-  endSeq: number;
-  callLine: number;
-  args: Record<string, string>;
-  return_val: string | null;
-  exc_type: string | null;
-  exc_val: string | null;
-  duration_ms: number;
-  events: TraceEvent[];
-  expressions: SubExpression[];
 }
 
 export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChange }) => {
@@ -44,92 +30,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
   const [expandedFuncs, setExpandedFuncs] = useState<Record<string, boolean>>({});
 
   // 1. Group events into structured function calls
-  const calls = useMemo<CallRecord[]>(() => {
-    const records: CallRecord[] = [];
-    const stack: Array<{
-      func: string;
-      file_idx: number;
-      startSeq: number;
-      startTime: number;
-      callLine: number;
-      args: Record<string, string>;
-      events: TraceEvent[];
-    }> = [];
-
-    session.events.forEach((ev) => {
-      if (ev.kind === 'call') {
-        stack.push({
-          func: ev.func,
-          file_idx: ev.file_idx,
-          startSeq: ev.seq,
-          startTime: ev.timestamp,
-          callLine: ev.line,
-          args: { ...ev.vars },
-          events: [ev],
-        });
-      } else {
-        const top = stack[stack.length - 1];
-        if (top) {
-          top.events.push(ev);
-        }
-
-        if (ev.kind === 'return' || ev.kind === 'exception') {
-          const completed = stack.pop();
-          if (completed) {
-            const allExprs: SubExpression[] = [];
-            completed.events.forEach((e) => {
-              if (e.expressions) allExprs.push(...e.expressions);
-            });
-
-            records.push({
-              id: `call-${completed.startSeq}-${completed.func}`,
-              func: completed.func,
-              file_idx: completed.file_idx,
-              startSeq: completed.startSeq,
-              endSeq: ev.seq,
-              callLine: completed.callLine,
-              args: completed.args,
-              return_val: ev.return_val || null,
-              exc_type: ev.exc_type || null,
-              exc_val: ev.exc_val || null,
-              duration_ms: Math.max(0.01, (ev.timestamp - completed.startTime) * 1000),
-              events: completed.events,
-              expressions: allExprs,
-            });
-          }
-        }
-      }
-    });
-
-    // Handle any unclosed frames
-    while (stack.length > 0) {
-      const remaining = stack.pop();
-      if (remaining) {
-        const allExprs: SubExpression[] = [];
-        remaining.events.forEach((e) => {
-          if (e.expressions) allExprs.push(...e.expressions);
-        });
-        const lastEv = remaining.events[remaining.events.length - 1];
-        records.push({
-          id: `call-${remaining.startSeq}-${remaining.func}`,
-          func: remaining.func,
-          file_idx: remaining.file_idx,
-          startSeq: remaining.startSeq,
-          endSeq: lastEv ? lastEv.seq : remaining.startSeq,
-          callLine: remaining.callLine,
-          args: remaining.args,
-          return_val: lastEv?.return_val || null,
-          exc_type: lastEv?.exc_type || null,
-          exc_val: lastEv?.exc_val || null,
-          duration_ms: lastEv ? (lastEv.timestamp - remaining.startTime) * 1000 : 0.05,
-          events: remaining.events,
-          expressions: allExprs,
-        });
-      }
-    }
-
-    return records.sort((a, b) => a.startSeq - b.startSeq);
-  }, [session]);
+  const calls = useMemo<CallRecord[]>(() => buildCallRecords(session), [session]);
 
   // Group calls by function name
   const callsByFunc = useMemo(() => {
@@ -187,18 +88,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
   }, [activeCall, onCallChange, session.files]);
 
   // Map of line -> expressions evaluated during this call
-  const lineExprsMap = useMemo(() => {
-    const map = new Map<number, SubExpression[]>();
-    if (!activeCall) return map;
-    activeCall.events.forEach((ev) => {
-      if (ev.expressions && ev.expressions.length > 0) {
-        const existing = map.get(ev.line) || [];
-        existing.push(...ev.expressions);
-        map.set(ev.line, existing);
-      }
-    });
-    return map;
-  }, [activeCall]);
+  const lineExprsMap = useMemo(() => buildLineExprs(activeCall), [activeCall]);
 
   // Unique list of expressions evaluated in this call
   const evaluatedExpressionsList = useMemo(() => {
@@ -250,7 +140,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
   };
 
   return (
-    <div className="flex-1 flex flex-col h-[calc(100vh-3rem)] overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 font-sans transition-colors">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 font-sans transition-colors">
       <div className="flex-1 grid grid-cols-12 overflow-hidden">
         
         {/* COLUMN 1: Function Calls Sidebar (280px / 3 cols) */}
