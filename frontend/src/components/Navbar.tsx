@@ -14,20 +14,20 @@ import {
   Copy,
   Bot
 } from 'lucide-react';
-import type { ThemeMode, AIProviderConfig } from '../types';
+import type { ThemeMode, AIProviderConfig, PageId } from '../types';
 
 interface NavbarProps {
   theme: ThemeMode;
   onToggleTheme: () => void;
-  currentPage: 'dashboard' | 'birdseye' | 'hunter' | 'playground';
-  onPageChange: (page: 'dashboard' | 'birdseye' | 'hunter' | 'playground') => void;
+  currentPage: PageId;
+  onPageChange: (page: PageId) => void;
   stats: {
     total_events: number;
     duration_ms: number;
     max_depth: number;
   };
   isConnected: boolean;
-  sessionId: string;
+  sessionId?: string;
   activeFileName?: string;
   activeFunctionName?: string;
   aiConfig?: AIProviderConfig | null;
@@ -50,22 +50,23 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [copied, setCopied] = React.useState(false);
 
   const copySessionId = () => {
+    if (!sessionId) return;
     navigator.clipboard.writeText(sessionId);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
 
   const navItems = [
-    { id: 'dashboard' as const, label: 'Overview', icon: LayoutDashboard, badge: '1', desc: 'Traced Sessions & Operations' },
-    { id: 'hunter' as const, label: 'Execution Timeline', icon: Play, badge: '2', desc: 'Step-by-Step VCR Line Replay' },
-    { id: 'birdseye' as const, label: 'Function Calls', icon: Eye, badge: '3', desc: 'Call Hierarchy & Expression Inspector' },
-    { id: 'playground' as const, label: 'Code Sandbox', icon: FlaskConical, badge: '4', desc: 'Interactive Function Runner & Tests' },
+    { id: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard, desc: 'Traced Sessions & Operations' },
+    { id: 'hunter' as const, label: 'Hunter', icon: Play, desc: 'Step-by-Step VCR Line Replay' },
+    { id: 'birdseye' as const, label: 'Birdseye', icon: Eye, desc: 'Call Hierarchy & Expression Inspector' },
+    { id: 'playground' as const, label: 'Playground', icon: FlaskConical, desc: 'Interactive Function Runner & Tests' },
   ];
 
   return (
-    <header className="h-14 border-b border-slate-200/80 dark:border-white/[0.08] bg-white/95 dark:bg-[#080d19]/95 backdrop-blur-md px-6 flex items-center justify-between select-none z-40 sticky top-0 transition-all">
+    <header className="h-14 border-b border-slate-200/80 dark:border-white/[0.06] bg-white/95 dark:bg-[#060911]/90 backdrop-blur-md px-4 lg:px-6 flex items-center justify-between gap-3 select-none z-40 sticky top-0 transition-all">
       {/* Brand & Active Context */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 min-w-0">
         {/* Brand Logo */}
         <div 
           onClick={() => onPageChange('dashboard')}
@@ -91,7 +92,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div 
           onClick={copySessionId}
           title="Click to copy session ID"
-          className="flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-mono bg-slate-100/90 dark:bg-[#050811] border border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:border-indigo-500/50 cursor-pointer transition-all shadow-xs"
+          className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-mono bg-slate-100/90 dark:bg-[#050811] border border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:border-indigo-500/50 cursor-pointer transition-all shadow-xs"
         >
           <span className="relative flex h-2 w-2">
             {isConnected && (
@@ -109,7 +110,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Active Trace File Breadcrumb */}
-        <div className="hidden lg:flex items-center gap-2 text-xs font-mono bg-slate-50 dark:bg-[#050811]/60 px-3 py-1 rounded-lg border border-slate-200/80 dark:border-white/[0.08]">
+        <div className="hidden xl:flex items-center gap-2 text-xs font-mono bg-slate-50 dark:bg-[#050811]/60 px-3 py-1 rounded-lg border border-slate-200/80 dark:border-white/[0.08]">
           <FileCode className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
           {activeFileName && !activeFileName.includes("demo_") ? (
             <>
@@ -133,7 +134,10 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       {/* Center: Segmented Navigation Pill */}
-      <nav aria-label="Mode Switcher" className="flex items-center bg-slate-100/90 dark:bg-[#050811] p-1 rounded-xl border border-slate-200 dark:border-white/[0.08] shadow-xs">
+      <nav
+        aria-label="Mode Switcher"
+        className="flex items-center gap-1 bg-slate-100/90 dark:bg-[#050811] p-1 rounded-2xl border border-slate-200 dark:border-white/[0.08] shadow-xs shrink-0"
+      >
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.id;
@@ -141,22 +145,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               key={item.id}
               onClick={() => onPageChange(item.id)}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 relative ${
+              className={`flex items-center gap-1.5 px-2.5 md:px-3.5 py-1.5 md:py-2 rounded-xl text-xs font-medium transition-all duration-150 whitespace-nowrap cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 ${
                 isActive
-                  ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white shadow-xs font-semibold'
-                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
+                  ? 'bg-white dark:bg-[#0c1220] text-slate-900 dark:text-indigo-300 shadow-sm font-semibold ring-1 ring-slate-200 dark:ring-indigo-500/40'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
-              title={item.desc}
+              title={item.desc}              aria-current={isActive ? 'page' : undefined}
             >
-              <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-indigo-600 dark:text-white fill-current' : 'text-slate-400'}`} />
-              <span>{item.label}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
-                isActive
-                  ? 'bg-indigo-50 dark:bg-indigo-700/60 text-indigo-600 dark:text-indigo-200'
-                  : 'bg-slate-200/70 dark:bg-slate-800/70 text-slate-400'
-              }`}>
-                {item.badge}
-              </span>
+              <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-indigo-600 dark:text-indigo-300 fill-current' : 'text-slate-400'}`} />
+              <span className="hidden sm:inline">{item.label}</span>
             </button>
           );
         })}

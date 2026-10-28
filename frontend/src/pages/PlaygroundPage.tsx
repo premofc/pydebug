@@ -24,12 +24,17 @@ interface PlaygroundPageProps {
   session: TraceSession;
   onSessionUpdated: (newSession: TraceSession) => void;
   onNavigateToHunter: () => void;
+  // Function handed over from the Dashboard's "Try It Live" action.
+  initialFunction?: FunctionSignature | null;
+  onConsumeInitialFunction?: () => void;
 }
 
 export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
   session: _session,
   onSessionUpdated,
   onNavigateToHunter,
+  initialFunction,
+  onConsumeInitialFunction,
 }) => {
   const [functions, setFunctions] = useState<FunctionSignature[]>([]);
   const [selectedFunc, setSelectedFunc] = useState<FunctionSignature | null>(null);
@@ -100,6 +105,21 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
     };
     fetchFuncs();
   }, []);
+
+  // When the user arrives via "Try It Live" on the Dashboard, pre-select that
+  // function and load an editable argument template for it.
+  // oxlint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!initialFunction) return;
+    const matched = functions.find(
+      (f) => f.name === initialFunction.name && f.file_path === initialFunction.file_path
+    );
+    const target = matched || initialFunction;
+    const isAlreadySelected =
+      selectedFunc?.name === target.name && selectedFunc?.file_path === target.file_path;
+    if (!isAlreadySelected) handleSelectFunction(target);
+    onConsumeInitialFunction?.();
+  }, [initialFunction, functions]);
 
   const filteredFunctions = useMemo(() => {
     if (!searchQuery.trim()) return functions;
@@ -279,50 +299,12 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 select-none transition-colors">
-      {/* Top Banner Header */}
-      <div className="h-14 px-6 bg-white/95 dark:bg-[#080d19]/95 border-b border-slate-200 dark:border-white/[0.08] backdrop-blur-md flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-4">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center border border-indigo-500/30">
-            <FlaskConical className="w-4 h-4 text-indigo-500" />
-          </div>
-          <div>
-            <h1 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <span>Interactive Code Sandbox & Fault Injection Runner</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-mono">
-                Live Isolated Tracer
-              </span>
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Pick any target function, test valid arguments or inject faulty values to trigger exceptions, and inspect the flow live.
-            </p>
-          </div>
-        </div>
-
-        {lastResult && (
-          <button
-            onClick={onNavigateToHunter}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-all duration-150 cursor-pointer ${
-              lastResult.success
-                ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/25'
-                : 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/25 animate-pulse'
-            }`}
-          >
-            {lastResult.success ? (
-              <span>Open in Execution Timeline</span>
-            ) : (
-              <span>Inspect Error in Execution Timeline</span>
-            )}
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
-
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors">
       {/* Main 3-Column Split */}
       <div className="flex-1 flex overflow-hidden">
         {/* Column 1: Discovered Functions List & Search */}
-        <div className="w-80 border-r border-slate-200 dark:border-white/[0.08] flex flex-col bg-white dark:bg-[#070b16] shrink-0">
-          <div className="p-3 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50/50 dark:bg-[#080d1a]/50">
+        <div className="w-80 border-r border-slate-200 dark:border-white/[0.08] flex flex-col bg-white dark:bg-[#090e1a] shrink-0">
+          <div className="p-3 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50/50 dark:bg-[#0b1220]/50">
             <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between mb-2">
               <span className="flex items-center gap-1.5">
                 <Code2 className="w-3.5 h-3.5 text-indigo-500" />
@@ -339,7 +321,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Filter functions..."
-                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg bg-white dark:bg-[#04060c] border border-slate-200 dark:border-white/[0.1] text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg bg-white dark:bg-[#050811] border border-slate-200 dark:border-white/[0.1] text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-colors"
               />
             </div>
           </div>
@@ -384,9 +366,9 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
         </div>
 
         {/* Column 2: JSON Parameter Editor & Runner */}
-        <div className="flex-1 border-r border-slate-200 dark:border-white/[0.08] flex flex-col bg-white dark:bg-[#070b16] overflow-hidden">
+        <div className="flex-1 border-r border-slate-200 dark:border-white/[0.08] flex flex-col bg-white dark:bg-[#090e1a] overflow-hidden">
           {/* Function Header */}
-          <div className="p-4 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50/50 dark:bg-[#080d1a]/50">
+          <div className="p-4 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50/50 dark:bg-[#0b1220]/50">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -426,7 +408,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
             </div>
 
             {selectedFunc?.docstring && (
-              <p className="mt-2 text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-[#060912] p-2 rounded-lg border border-slate-200/80 dark:border-white/[0.06] line-clamp-2">
+              <p className="mt-2 text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-[#0b1220] p-2 rounded-lg border border-slate-200/80 dark:border-white/[0.06] line-clamp-2">
                 {selectedFunc.docstring}
               </p>
             )}
@@ -493,7 +475,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
 
         {/* Column 3: Live Output & Exception Inspector */}
         <div className="w-96 flex flex-col bg-slate-50/50 dark:bg-[#050811] overflow-hidden shrink-0">
-          <div className="p-4 border-b border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#070b16] flex items-center justify-between">
+          <div className="p-4 border-b border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#090e1a] flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
               <Activity className="w-3.5 h-3.5 text-indigo-500" />
               Live Execution Output
@@ -625,7 +607,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
 
       {/* Bottom Panel: Dynamic Test Scenarios */}
       {testCases.length > 0 && (
-        <div className="h-36 border-t border-slate-200 dark:border-white/[0.08] bg-white/95 dark:bg-[#070b16]/95 backdrop-blur-md p-3 flex flex-col shrink-0 select-none">
+        <div className="h-36 border-t border-slate-200 dark:border-white/[0.08] bg-white/95 dark:bg-[#090e1a]/95 backdrop-blur-md p-3 flex flex-col shrink-0 select-none">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 uppercase tracking-wide">
               <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
@@ -644,7 +626,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                   className={`min-w-[240px] max-w-[280px] p-2.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between shrink-0 ${
                     isError
                       ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200/80 dark:border-rose-900/40 hover:border-rose-500/60'
-                      : 'bg-slate-50 dark:bg-[#0a0f1e] border-slate-200/80 dark:border-white/[0.08] hover:border-indigo-500/60'
+                      : 'bg-slate-50 dark:bg-[#0c1322] border-slate-200/80 dark:border-white/[0.08] hover:border-indigo-500/60'
                   }`}
                 >
                   <div>

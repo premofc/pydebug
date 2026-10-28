@@ -1,9 +1,10 @@
 export interface SubExpression {
   text: string;
   val: string;
-  type_name: string;
-  start_col: number;
-  end_col: number;
+  type_name?: string;
+  start_col?: number;
+  end_col?: number;
+  line?: number;
   node_type?: string;
 }
 
@@ -75,10 +76,12 @@ export interface PinnedExpression {
 
 export type ThemeMode = 'dark' | 'light';
 
+export type PageId = 'dashboard' | 'hunter' | 'birdseye' | 'playground';
+
 export interface FunctionParam {
   name: string;
   annotation: string | null;
-  default: string | null;
+  default?: string | null;
 }
 
 export interface FunctionSignature {

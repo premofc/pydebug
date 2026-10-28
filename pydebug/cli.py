@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import runpy
 import sys
 import threading
@@ -117,10 +118,20 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     is_module = args.module or (not args.file.endswith(".py") and not Path(args.file).exists())
 
+    # Never trace PyDebug's own package: when running pytest files the test
+    # suite itself instantiates nested tracers, and every inner trace event
+    # would multiply into outer-trace events (O(n^2) blowup / apparent hang).
+    cli_excludes: list[str] = []
+    try:
+        from pydebug import __file__ as _pd_init
+        cli_excludes.append(os.path.dirname(os.path.abspath(_pd_init)) + os.sep)
+    except Exception:
+        pass
+
     if is_module:
         mod_name = args.file
         print(f"⚡ [PyDebug] Tracing module {mod_name} in {cwd} ...")
-        tracer = PyTracer(include_paths=include_paths)
+        tracer = PyTracer(include_paths=include_paths, exclude_prefixes=cli_excludes)
         syncer = LiveSessionSync(tracer, port=args.port, title=f"Module: {mod_name}")
         syncer.start()
         tracer.start()
@@ -138,19 +149,30 @@ def cmd_run(args: argparse.Namespace) -> None:
             print(f"Error: file not found: {target}", file=sys.stderr)
             sys.exit(1)
 
+        # Pytest test files must be executed through pytest, otherwise only the
+        # module import is traced and the actual test functions never run.
+        is_test_file = target.name.startswith("test_") or target.name.endswith("_test.py")
+
         include_paths.extend([str(target), str(target.parent)])
         print(f"⚡ [PyDebug] Tracing {target.name} ...")
-        tracer = PyTracer(include_paths=include_paths)
+        tracer = PyTracer(include_paths=include_paths, exclude_prefixes=cli_excludes)
         syncer = LiveSessionSync(tracer, port=args.port, title=f"Script: {target.name}")
         syncer.start()
         tracer.start()
         sys.argv = [str(target), *args.script_args]
         try:
-            runpy.run_path(str(target), run_name="__main__")
+            if is_test_file:
+                import pytest
+
+                print(f"✨ [PyDebug] Detected pytest test file - running {target.name} through pytest.main() ...")
+                pytest.main([str(target), "-v", str(target.parent)])
+            else:
+                runpy.run_path(str(target), run_name="__main__")
         finally:
             syncer.stop()
             session = tracer.stop()
-            session.title = f"Script: {target.name}"
+            prefix = "Test Run: " if is_test_file else "Script: "
+            session.title = f"{prefix}{target.name}"
             session.compute_stats()
 
     print(f"✨ [PyDebug] Execution finished: {len(session.events)} events recorded.")

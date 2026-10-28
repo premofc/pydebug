@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -53,17 +54,25 @@ class TraceSession:
     _last_vars_by_func: dict[str, dict[str, str]] = field(default_factory=dict, repr=False)
 
     def register_file(self, filename: str) -> int:
+        # PyTracer calls this for every single trace event. Path.resolve() is a
+        # full filesystem walk (ntpath.realpath) and ruinously slow on Windows,
+        # so gate on a cheap normalized key before touching the filesystem.
+        pre = os.path.normcase(os.path.normpath(os.path.abspath(filename or "")))
+        if pre in self._file_idx_cache:
+            return self._file_idx_cache[pre]
         clean_path = str(Path(filename).resolve())
-        if clean_path not in self._file_idx_cache:
+        if clean_path in self._file_idx_cache:
+            idx = self._file_idx_cache[clean_path]
+        else:
             idx = len(self.files)
-            self._file_idx_cache[clean_path] = idx
             self.files.append(clean_path)
             try:
                 content = Path(clean_path).read_text(encoding="utf-8", errors="replace")
                 self.file_sources[idx] = content.splitlines()
             except Exception:
                 self.file_sources[idx] = []
-        return self._file_idx_cache[clean_path]
+        self._file_idx_cache[pre] = idx
+        return idx
 
     def record_event(
         self,

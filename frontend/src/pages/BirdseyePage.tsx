@@ -125,7 +125,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
           line: 0,
           func: activeCall?.func || '',
           val: expr.val,
-          type_name: expr.type_name,
+          type_name: expr.type_name || 'unknown',
           pinnedAtEventSeq: activeCall?.startSeq || 0,
         },
       ];
@@ -159,7 +159,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                 type="text"
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
-                placeholder="Search functions or args..."
+                placeholder="Filter calls / search functions..."
                 className="w-full bg-white dark:bg-[#050811] border border-slate-200 dark:border-white/[0.12] rounded-md pl-8 pr-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono transition-colors"
               />
             </div>

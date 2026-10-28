@@ -32,6 +32,9 @@ interface OpenFrame {
    * and every captured sub-expression in between.
    */
 export function buildCallRecords(session: TraceSession): CallRecord[] {
+  if (!session || !session.events || !Array.isArray(session.events)) {
+    return [];
+  }
   const records: CallRecord[] = [];
   const stack: OpenFrame[] = [];
 

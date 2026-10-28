@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Navbar } from './components/Navbar';
 import { AiSettingsModal } from './components/AiSettingsModal';
 import { DashboardPage } from './pages/DashboardPage';
@@ -6,13 +6,13 @@ import { BirdseyePage } from './pages/BirdseyePage';
 import { HunterPage } from './pages/HunterPage';
 import { PlaygroundPage } from './pages/PlaygroundPage';
 import { MOCK_TRACE_SESSION } from './data/mockData';
-import type { TraceSession, ThemeMode, AIProviderConfig } from './types';
+import type { TraceSession, ThemeMode, AIProviderConfig, FunctionSignature, PageId } from './types';
 
 export const App: React.FC = () => {
   const [theme, setTheme] = useState<ThemeMode>(() => {
     return (localStorage.getItem('pydebug_theme') as ThemeMode) || 'dark';
   });
-  const [currentPage, setCurrentPage] = useState<'dashboard' | 'birdseye' | 'hunter' | 'playground'>('dashboard');
+  const [currentPage, setCurrentPage] = useState<PageId>('dashboard');
   const [session, setSession] = useState<TraceSession>(MOCK_TRACE_SESSION);
   // The mock is only a placeholder for the Birdseye/Hunter views until real
   // trace data arrives; the navbar must not present it as a real session.
@@ -24,6 +24,9 @@ export const App: React.FC = () => {
     fileName: '',
     funcName: '',
   });
+  // Function picked via "Try It Live" on the Dashboard; handed to the Code
+  // Sandbox so the user can edit arguments there before executing.
+  const [pendingPlaygroundFunc, setPendingPlaygroundFunc] = useState<FunctionSignature | null>(null);
 
   // Apply theme to <html>
   useEffect(() => {
@@ -36,6 +39,15 @@ export const App: React.FC = () => {
     localStorage.setItem('pydebug_theme', theme);
   }, [theme]);
 
+  // Stable handlers: new-identity props would re-trigger the pages'
+  // notification effects on every render (setState -> render -> new prop ->
+  // effect -> setState ...), an infinite loop. Guard state too.
+  const handleActiveFileChange = useCallback((fileName: string, funcName: string) => {
+    setActiveFileInfo((prev) =>
+      prev.fileName === fileName && prev.funcName === funcName ? prev : { fileName, funcName }
+    );
+  }, []);
+  const openAiSettings = useCallback(() => setIsAiModalOpen(true), []);
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
@@ -118,7 +130,7 @@ export const App: React.FC = () => {
 
   const handleSelectSession = async (
     sessionId: string,
-    targetView: 'birdseye' | 'hunter' | 'playground'
+    targetView: PageId
   ) => {
     try {
       const res = await fetch(`/api/session?id=${sessionId}`);
@@ -161,7 +173,7 @@ export const App: React.FC = () => {
         activeFileName={hasRealSession ? activeFileInfo.fileName : undefined}
         activeFunctionName={hasRealSession ? activeFileInfo.funcName : undefined}
         aiConfig={aiConfig}
-        onOpenAiSettings={() => setIsAiModalOpen(true)}
+        onOpenAiSettings={openAiSettings}
       />
 
       <main className="flex-1 flex flex-col overflow-hidden">
@@ -169,20 +181,24 @@ export const App: React.FC = () => {
           <DashboardPage
             onSelectSession={handleSelectSession}
             aiConfig={aiConfig}
+            onTryFunction={(fn) => {
+              setPendingPlaygroundFunc(fn);
+              setCurrentPage('playground');
+            }}
           />
         )}
         {currentPage === 'birdseye' && (
           <BirdseyePage
             session={session}
-            onCallChange={(fileName, funcName) => setActiveFileInfo({ fileName, funcName })}
+            onCallChange={handleActiveFileChange}
           />
         )}
         {currentPage === 'hunter' && (
           <HunterPage
             session={session}
-            onEventChange={(fileName, funcName) => setActiveFileInfo({ fileName, funcName })}
+            onEventChange={handleActiveFileChange}
             aiConfig={aiConfig}
-            onOpenAiSettings={() => setIsAiModalOpen(true)}
+            onOpenAiSettings={openAiSettings}
           />
         )}
         {currentPage === 'playground' && (
@@ -201,6 +217,8 @@ export const App: React.FC = () => {
               }
             }}
             onNavigateToHunter={() => setCurrentPage('hunter')}
+            initialFunction={pendingPlaygroundFunc}
+            onConsumeInitialFunction={() => setPendingPlaygroundFunc(null)}
           />
         )}
       </main>

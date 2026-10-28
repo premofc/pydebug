@@ -171,7 +171,8 @@ class ExpressionTransformer(ast.NodeTransformer):
 def inspect_expressions(fn: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator that rewrites a function's AST to spy on all sub-expressions."""
     try:
-        src = inspect.getsource(fn)
+        import textwrap
+        src = textwrap.dedent(inspect.getsource(fn))
         lines = src.splitlines()
         fn_node = next(n for n in ast.parse(src).body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))
 

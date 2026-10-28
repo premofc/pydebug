@@ -328,7 +328,7 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
       {/* 1. TOP TIMELINE PLAYER CONTROLS */}
       <div className="h-16 px-4 bg-white dark:bg-[#090e1a]/90 border-b border-slate-200 dark:border-white/[0.08] flex items-center justify-between gap-4 select-none z-10 shrink-0">
         {/* Play & Step Buttons */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           <button
             onClick={handleFirst}
             disabled={currentIdx === 0}
@@ -468,6 +468,22 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
               </div>
             )}
           </div>
+
+          {/* Exception Banner */}
+          {currentEvent?.exc_type && (
+            <div className="mx-2 mt-2 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/30 flex items-center gap-2 text-xs shrink-0" role="alert">
+              <ShieldAlert className="w-4 h-4 text-rose-500 shrink-0" />
+              <span className="font-bold text-rose-600 dark:text-rose-400 font-mono">{currentEvent.exc_type}</span>
+              {currentEvent.exc_val && (
+                <pre className="font-mono text-[11px] text-rose-800 dark:text-rose-200 whitespace-pre-wrap break-words select-text m-0 overflow-visible">
+                  {currentEvent.exc_val}
+                </pre>
+              )}
+              {currentEvent.line != null && (
+                <span className="ml-auto text-[10px] font-mono text-rose-500/70 shrink-0">Line {currentEvent.line}</span>
+              )}
+            </div>
+          )}
 
           {/* Code Viewer */}
           <div className="flex-1 overflow-auto font-mono text-[13px] leading-6 select-text p-2">

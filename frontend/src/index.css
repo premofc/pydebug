@@ -45,6 +45,25 @@ code, pre, .font-mono {
   font-family: var(--font-mono);
 }
 
+/* Icon/button UX: everything clickable looks clickable and has focus states */
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid rgba(99, 102, 241, 0.55);
+  outline-offset: 1px;
+}
+
+/* Consistent-icon size keeps box models aligned inside tight toolbars */
+button svg, a > svg {
+  flex-shrink: 0;
+}
+
 /* Glassmorphism & High-Tech Accents */
 .glass-panel {
   background: rgba(14, 20, 33, 0.75);

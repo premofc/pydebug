@@ -70,10 +70,8 @@ class PyTracer:
             sys.prefix,
             "<frozen",
             "importlib",
-            _INTERNAL_CORE,
-            os.path.join(_INTERNAL_ROOT, "server"),
-            os.path.join(_INTERNAL_ROOT, "integrations"),
-            os.path.join(_INTERNAL_ROOT, "cli.py"),
+            _INTERNAL_CORE + os.sep,
+            _INTERNAL_ROOT + os.sep,
             "asyncio",
             "threading",
         ]
@@ -97,12 +95,18 @@ class PyTracer:
         if "uvicorn" in norm or "starlette" in norm or "anyio" in norm:
             return False
 
+        # Never trace tracer core engine internals
+        if abs_file.startswith(_INTERNAL_CORE + os.sep) or abs_file == _INTERNAL_CORE:
+            return False
+
+        # If explicit include_paths are specified, trace only matching files
+        if self.include_paths:
+            return any(abs_file.startswith(inc) for inc in self.include_paths)
+
         for excl in self.exclude_prefixes:
             if abs_file.startswith(excl):
                 return False
 
-        if self.include_paths:
-            return any(abs_file.startswith(inc) for inc in self.include_paths)
         return True
 
     def _trace_fn(self, frame: Any, event: str, arg: Any) -> Any:
