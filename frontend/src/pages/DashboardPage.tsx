@@ -67,9 +67,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
         setSessions((prev) => (
           prev.length === next.length && prev.every((p, i) => p.id === next[i].id) ? prev : next
         ));
-        if (!expandedIdRef.current) {
-          setExpandedId(next[0]?.id ?? null);
-        }
+        if (!initialAutoExpandedRef.current && next.length > 0) { initialAutoExpandedRef.current = true; setExpandedId(next[0].id); }
       }
     } catch (err) {
       console.error('Failed to fetch sessions:', err);
@@ -78,11 +76,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
     }
   };
 
-  // Latest expansion without re-creating the poll closure on every click
-  const expandedIdRef = React.useRef<string | null>(null);
-  useEffect(() => {
-    expandedIdRef.current = expandedId;
-  }, [expandedId]);
+  const initialAutoExpandedRef = React.useRef(false);
 
   const fetchFunctions = async () => {
     try {
@@ -490,7 +484,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
                                     >
                                       <ChevronLeft className="w-3.5 h-3.5" />
                                     </button>
-                                    {funcCalls.indexOf(activeCall) + 1} / {funcCalls.length}
+                                    <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-[10px]">{funcCalls.indexOf(activeCall) + 1} / {funcCalls.length}</span>
                                     <button
                                       onClick={() =>
                                         setSelectedCallId(funcCalls[Math.min(funcCalls.length - 1, funcCalls.indexOf(activeCall) + 1)]?.id || null)

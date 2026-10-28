@@ -165,7 +165,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                 import pytest
 
                 print(f"✨ [PyDebug] Detected pytest test file - running {target.name} through pytest.main() ...")
-                pytest.main([str(target), "-v", str(target.parent)])
+                pytest.main([str(target), "-v", "-s", *args.script_args])
             else:
                 runpy.run_path(str(target), run_name="__main__")
         finally:

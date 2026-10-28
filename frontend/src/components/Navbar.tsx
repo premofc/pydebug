@@ -86,7 +86,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        <div className="h-5 w-[1px] bg-slate-200 dark:border-white/[0.08]" />
+        <div className="h-5 w-[1px] bg-slate-200 dark:bg-white/[0.08]" />
 
         {/* Live SSE Status Pill */}
         <div 
