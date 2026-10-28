@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { AiSettingsModal } from './AiSettingsModal';
+import { AiSettingsModal } from '../src/components/AiSettingsModal';
 
 describe('AiSettingsModal Component', () => {
   beforeEach(() => {

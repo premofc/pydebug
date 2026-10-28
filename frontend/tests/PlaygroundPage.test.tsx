@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { PlaygroundPage } from './PlaygroundPage';
+import { PlaygroundPage } from '../src/pages/PlaygroundPage';
 import type { TraceSession, FunctionSignature } from '../types';
 
 describe('PlaygroundPage Component', () => {
