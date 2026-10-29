@@ -109,25 +109,23 @@ export const Navbar: React.FC<NavbarProps> = ({
           </span>
         </div>
 
-        {/* Active Trace File Breadcrumb */}
-        <div className="hidden xl:flex items-center gap-2 text-xs font-mono bg-slate-50 dark:bg-[#050811]/60 px-3 py-1 rounded-lg border border-slate-200/80 dark:border-white/[0.08]">
-          <FileCode className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+        {/* Active Trace File Breadcrumb (visible on 2xl+ to prevent collision with mode switcher) */}
+        <div className="hidden 2xl:flex items-center gap-2 text-xs font-mono bg-slate-100/80 dark:bg-[#050811]/60 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-white/[0.08] max-w-[190px] shrink min-w-0 overflow-hidden">
+          <FileCode className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400 shrink-0" />
           {activeFileName && !activeFileName.includes("demo_") ? (
-            <>
-              <span className="text-slate-800 dark:text-slate-200 font-medium">{activeFileName}</span>
+            <div className="flex items-center gap-1 min-w-0 truncate">
+              <span className="text-slate-800 dark:text-slate-200 font-medium truncate">{activeFileName}</span>
               {activeFunctionName && (
                 <>
-                  <span className="text-slate-400">/</span>
-                  <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
-                    {activeFunctionName}()
-                  </span>
+                  <span className="text-slate-400 shrink-0">/</span>
+                  <span className="text-indigo-600 dark:text-indigo-400 font-semibold truncate">{activeFunctionName}()</span>
                 </>
               )}
-            </>
+            </div>
           ) : (
-            <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
-              <span className="text-slate-700 dark:text-slate-300 font-medium font-sans">ClaimCare MCP Workspace</span>
-              <span className="text-emerald-500 font-medium text-[11px] font-sans">• Ready</span>
+            <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 min-w-0 truncate">
+              <span className="text-slate-700 dark:text-slate-300 font-medium font-sans truncate">ClaimCare MCP Workspace</span>
+              <span className="text-emerald-500 font-medium text-[11px] font-sans shrink-0">• Ready</span>
             </div>
           )}
         </div>
@@ -136,7 +134,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* Center: Segmented Navigation Pill */}
       <nav
         aria-label="Mode Switcher"
-        className="flex items-center gap-1 bg-slate-100/90 dark:bg-[#050811] p-1 rounded-2xl border border-slate-200 dark:border-white/[0.08] shadow-xs shrink-0"
+        className="flex items-center gap-1 bg-slate-100 dark:bg-[#050811] p-1 rounded-2xl border border-slate-300 dark:border-white/[0.08] shadow-xs shrink-0 mx-2"
       >
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -145,10 +143,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               key={item.id}
               onClick={() => onPageChange(item.id)}
-              className={`flex items-center gap-1.5 px-2.5 md:px-3.5 py-1.5 md:py-2 rounded-xl text-xs font-medium transition-all duration-150 whitespace-nowrap cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 ${
+              className={`flex items-center gap-1.5 px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-xs font-medium transition-all duration-150 whitespace-nowrap cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 ${
                 isActive
-                  ? 'bg-white dark:bg-[#0c1220] text-slate-900 dark:text-indigo-300 shadow-sm font-semibold ring-1 ring-slate-200 dark:ring-indigo-500/40'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-100'
+                  ? 'bg-white dark:bg-[#0c1220] text-indigo-700 dark:text-indigo-300 shadow-sm font-bold border border-slate-300 dark:border-indigo-500/40 ring-1 ring-indigo-500/20'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/70 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
               title={item.desc}              aria-current={isActive ? 'page' : undefined}
             >

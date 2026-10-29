@@ -15,7 +15,6 @@ import {
   Sparkles,
   Pin,
   CornerDownRight,
-  Terminal,
   Bot,
   RefreshCw,
   Lightbulb,
@@ -637,19 +636,7 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
                 }`}
               >
                 <CornerDownRight className="w-3.5 h-3.5" />
-                <span>Stack</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('stream')}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors ${
-                  activeTab === 'stream'
-                    ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white shadow-xs font-semibold'
-                    : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
-                }`}
-              >
-                <Terminal className="w-3.5 h-3.5" />
-                <span>Stream</span>
+                <span>Call Stack</span>
               </button>
             </div>
           </div>
@@ -671,6 +658,24 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
               </div>
 
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {currentDiffs && Object.keys(currentDiffs).length > 0 && (
+                  <div className="p-3 rounded-xl bg-amber-50/90 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700/60 shadow-xs space-y-2 mb-2">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800 dark:text-amber-300">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                      <span>Mutations On Line {currentEvent?.line} ({Object.keys(currentDiffs).length}):</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {Object.entries(currentDiffs).map(([k, delta]) => (
+                        <div key={k} className="flex items-center gap-2 text-xs font-mono bg-white/90 dark:bg-slate-900/90 p-2 rounded-lg border border-amber-200/80 dark:border-amber-800/40">
+                          <span className="font-bold text-slate-900 dark:text-slate-100">{k}:</span>
+                          <span className="text-rose-500 line-through truncate max-w-[110px]" title={delta.old}>{delta.old || 'None'}</span>
+                          <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span className="text-emerald-600 dark:text-emerald-400 font-semibold truncate" title={delta.new}>{delta.new}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {filteredVars.length > 0 ? (
                   filteredVars.map(([name, val]) => {
                     const isPinned = pinnedVars.includes(name);
@@ -683,7 +688,7 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
                         className={`p-2.5 rounded-lg border transition-all ${
                           isModified
                             ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800/80 shadow-xs'
-                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-white/[0.08]/80 hover:border-slate-300 dark:hover:border-slate-700'
+                            : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-white/[0.08] hover:border-slate-300 dark:hover:border-slate-700'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2 mb-1.5">

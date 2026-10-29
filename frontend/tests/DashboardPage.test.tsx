@@ -66,7 +66,7 @@ describe('DashboardPage Component', () => {
 
     await waitFor(() => {
       expect(screen.getByText('[MCP] claimcare_verify_waiting_period')).toBeInTheDocument();
-      expect(screen.getAllByText('POST /api/claims/adjudicate').length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByText('POST /api/claims/adjudicate')).toBeInTheDocument();
     });
   });
 
@@ -75,15 +75,14 @@ describe('DashboardPage Component', () => {
 
     await waitFor(() => {
       expect(screen.getByText('[MCP] claimcare_verify_waiting_period')).toBeInTheDocument();
-      expect(screen.getAllByText('POST /api/claims/adjudicate').length).toBe(2);
+      expect(screen.getByText('POST /api/claims/adjudicate')).toBeInTheDocument();
     });
 
     const searchInput = screen.getByPlaceholderText(/filter executions/i);
     fireEvent.change(searchInput, { target: { value: 'claimcare_verify' } });
 
     expect(screen.getByText('[MCP] claimcare_verify_waiting_period')).toBeInTheDocument();
-    // Only the simulator button remains, the session row is filtered out
-    expect(screen.getAllByText('POST /api/claims/adjudicate').length).toBe(1);
+    expect(screen.queryByText('POST /api/claims/adjudicate')).not.toBeInTheDocument();
   });
 
   it('triggers onSelectSession when clicking Replay Timeline', async () => {
@@ -98,45 +97,19 @@ describe('DashboardPage Component', () => {
     expect(onSelectSession).toHaveBeenCalledWith('sess_1', 'hunter');
   });
 
-  it('triggers simulation request when clicking quick simulation badge', async () => {
-    global.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
-      if (url === '/api/simulate-request' && init?.method === 'POST') {
-        return Promise.resolve({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              success: true,
-              session: { id: 'sim_123', events: [] },
-              summary: { id: 'sim_123', title: 'POST /api/claims/adjudicate' },
-            }),
-        });
-      }
-      if (url === '/api/sessions') {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve(mockSessions) });
-      }
-      if (url === '/api/functions') {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve(mockFunctions) });
-      }
-      if (url.startsWith('/api/session')) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: 'sess_1', events: [] }) });
-      }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
-    });
-
-    render(<DashboardPage onSelectSession={vi.fn()} />);
+  it('triggers onTryFunction when clicking Try It Live on a discovered function', async () => {
+    const onTryFunction = vi.fn();
+    render(<DashboardPage onSelectSession={vi.fn()} onTryFunction={onTryFunction} />);
 
     await waitFor(() => {
-      expect(screen.getByText('MCP Tool: verify_period')).toBeInTheDocument();
+      expect(screen.getByText('check_waiting_period()')).toBeInTheDocument();
     });
 
-    const simBtn = screen.getByText('MCP Tool: verify_period');
-    fireEvent.click(simBtn);
+    const tryBtn = screen.getByText('Try It Live');
+    fireEvent.click(tryBtn);
 
-    await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith(
-        '/api/simulate-request',
-        expect.anything()
-      );
-    });
+    expect(onTryFunction).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'check_waiting_period' })
+    );
   });
 });

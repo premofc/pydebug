@@ -244,4 +244,35 @@ describe('PlaygroundPage Component', () => {
     fireEvent.click(inspectBtn);
     expect(onNavigateToHunter).toHaveBeenCalled();
   });
+
+  it('preserves initialFunction handed over from Dashboard and does not overwrite with data[0]', async () => {
+    const customFunc: FunctionSignature = {
+      name: 'greeting',
+      line: 162,
+      docstring: 'Endpoint greeting',
+      file_path: 'C:/app/api.py',
+      is_async: true,
+      params: [
+        { name: 'request', annotation: 'Request' },
+        { name: 'authorization', annotation: 'str | None' },
+      ],
+    };
+
+    render(
+      <PlaygroundPage
+        session={dummySession}
+        onSessionUpdated={vi.fn()}
+        onNavigateToHunter={vi.fn()}
+        initialFunction={customFunc}
+      />
+    );
+
+    // Immediately shows greeting() in the header
+    expect(screen.getByText('greeting()')).toBeInTheDocument();
+
+    // After async functions load (which returns calculate_tax), greeting() is preserved!
+    await waitFor(() => {
+      expect(screen.getByText('greeting()')).toBeInTheDocument();
+    });
+  });
 });

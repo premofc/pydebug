@@ -29,6 +29,28 @@ interface PlaygroundPageProps {
   onConsumeInitialFunction?: () => void;
 }
 
+const generateFallbackTemplate = (func: FunctionSignature): Record<string, any> => {
+  const template: Record<string, any> = {};
+  func.params.forEach((p) => {
+    if (p.name === 'self' || p.name === 'cls') return;
+    const ann = (p.annotation || '').toLowerCase();
+    if (ann.includes('list')) {
+      template[p.name] = ['item_1', 'item_2'];
+    } else if (ann.includes('dict')) {
+      template[p.name] = { key: 'value' };
+    } else if (ann.includes('int')) {
+      template[p.name] = 10;
+    } else if (ann.includes('float')) {
+      template[p.name] = 25.5;
+    } else if (ann.includes('bool')) {
+      template[p.name] = true;
+    } else {
+      template[p.name] = p.default && p.default !== 'None' ? p.default.replace(/['"]/g, '') : 'sample_value';
+    }
+  });
+  return template;
+};
+
 export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
   session: _session,
   onSessionUpdated,
@@ -37,9 +59,18 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
   onConsumeInitialFunction,
 }) => {
   const [functions, setFunctions] = useState<FunctionSignature[]>([]);
-  const [selectedFunc, setSelectedFunc] = useState<FunctionSignature | null>(null);
+  const [selectedFunc, setSelectedFunc] = useState<FunctionSignature | null>(initialFunction || null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [argsJson, setArgsJson] = useState<string>('{}');
+  const [showScenarios, setShowScenarios] = useState<boolean>(false);
+  const [argsJson, setArgsJson] = useState<string>(() => {
+    if (initialFunction) {
+      if (initialFunction.sample_valid && Object.keys(initialFunction.sample_valid).length > 0) {
+        return JSON.stringify(initialFunction.sample_valid, null, 2);
+      }
+      return JSON.stringify(generateFallbackTemplate(initialFunction), null, 2);
+    }
+    return '{}';
+  });
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [showTraceback, setShowTraceback] = useState<boolean>(false);
@@ -67,11 +98,17 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
           const data: FunctionSignature[] = await res.json();
           if (data && data.length > 0) {
             setFunctions(data);
-            setSelectedFunc(data[0]);
-            if (data[0].sample_valid) {
-              setArgsJson(JSON.stringify(data[0].sample_valid, null, 2));
-            } else {
-              setArgsJson(JSON.stringify(generateFallbackTemplate(data[0]), null, 2));
+            const target = initialFunction || selectedFunc;
+            const matched = target
+              ? data.find((f) => f.name === target.name && f.file_path === target.file_path) || target
+              : data[0];
+            setSelectedFunc(matched);
+            if (!initialFunction && !selectedFunc) {
+              if (matched.sample_valid && Object.keys(matched.sample_valid).length > 0) {
+                setArgsJson(JSON.stringify(matched.sample_valid, null, 2));
+              } else {
+                setArgsJson(JSON.stringify(generateFallbackTemplate(matched), null, 2));
+              }
             }
 
             // Generate dynamic test scenarios from discovered project functions
@@ -108,18 +145,14 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
 
   // When the user arrives via "Try It Live" on the Dashboard, pre-select that
   // function and load an editable argument template for it.
-  // oxlint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!initialFunction) return;
     const matched = functions.find(
       (f) => f.name === initialFunction.name && f.file_path === initialFunction.file_path
     );
-    const target = matched || initialFunction;
-    const isAlreadySelected =
-      selectedFunc?.name === target.name && selectedFunc?.file_path === target.file_path;
-    if (!isAlreadySelected) handleSelectFunction(target);
+    handleSelectFunction(matched || initialFunction);
     onConsumeInitialFunction?.();
-  }, [initialFunction, functions]);
+  }, [initialFunction]);
 
   const filteredFunctions = useMemo(() => {
     if (!searchQuery.trim()) return functions;
@@ -131,28 +164,6 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
         fn.params.some((p) => p.name.toLowerCase().includes(q))
     );
   }, [functions, searchQuery]);
-
-  const generateFallbackTemplate = (func: FunctionSignature): Record<string, any> => {
-    const template: Record<string, any> = {};
-    func.params.forEach((p) => {
-      if (p.name === 'self' || p.name === 'cls') return;
-      const ann = (p.annotation || '').toLowerCase();
-      if (ann.includes('list')) {
-        template[p.name] = ['item_1', 'item_2'];
-      } else if (ann.includes('dict')) {
-        template[p.name] = { key: 'value' };
-      } else if (ann.includes('int')) {
-        template[p.name] = 10;
-      } else if (ann.includes('float')) {
-        template[p.name] = 25.5;
-      } else if (ann.includes('bool')) {
-        template[p.name] = true;
-      } else {
-        template[p.name] = p.default && p.default !== 'None' ? p.default.replace(/['"]/g, '') : 'sample_value';
-      }
-    });
-    return template;
-  };
 
   const handleSelectFunction = (func: FunctionSignature) => {
     setSelectedFunc(func);
@@ -605,18 +616,27 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
         </div>
       </div>
 
-      {/* Bottom Panel: Dynamic Test Scenarios */}
+      {/* Bottom Panel: Dynamic Test Scenarios (Collapsible) */}
       {testCases.length > 0 && (
-        <div className="h-36 border-t border-slate-200 dark:border-white/[0.08] bg-white/95 dark:bg-[#090e1a]/95 backdrop-blur-md p-3 flex flex-col shrink-0 select-none">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 uppercase tracking-wide">
+        <div className={`border-t border-slate-200 dark:border-white/[0.08] bg-white/95 dark:bg-[#090e1a]/95 backdrop-blur-md px-4 py-2.5 flex flex-col shrink-0 select-none transition-all ${
+          showScenarios ? 'h-36' : 'h-11'
+        }`}>
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setShowScenarios((v) => !v)}
+              className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 uppercase tracking-wide hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer"
+            >
               <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-              Pre-Configured Test Scenarios ({testCases.length})
+              <span>Pre-Configured Test Scenarios ({testCases.length})</span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showScenarios ? 'rotate-180' : ''}`} />
+            </button>
+            <span className="text-[11px] text-slate-400">
+              {showScenarios ? 'Click any card to auto-populate and run execution' : 'Click to expand test scenarios'}
             </span>
-            <span className="text-[11px] text-slate-400">Click any card to auto-populate and run execution</span>
           </div>
 
-          <div className="flex-1 flex gap-2.5 overflow-x-auto pb-1">
+          {showScenarios && (
+          <div className="flex-1 flex gap-2.5 overflow-x-auto pb-1 mt-2">
             {testCases.map((tc) => {
               const isError = tc.id.includes('-err');
               return (
@@ -657,6 +677,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
               );
             })}
           </div>
+          )}
         </div>
       )}
     </div>
