@@ -32,7 +32,7 @@ describe('Navbar Component', () => {
   it('renders branding title and version badge', () => {
     render(<Navbar {...defaultProps} />);
     expect(screen.getByText('PyDebug')).toBeInTheDocument();
-    expect(screen.getByText('v0.1.3')).toBeInTheDocument();
+    expect(screen.getByText('v0.1.4')).toBeInTheDocument();
   });
 
   it('renders live stream badge when isConnected is true', () => {
