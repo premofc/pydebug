@@ -32,19 +32,13 @@ describe('Navbar Component', () => {
   it('renders branding title and version badge', () => {
     render(<Navbar {...defaultProps} />);
     expect(screen.getByText('PyDebug')).toBeInTheDocument();
-    expect(screen.getByText('v0.1.4')).toBeInTheDocument();
+    expect(screen.getByText('v0.1.5')).toBeInTheDocument();
   });
 
-  it('renders live stream badge when isConnected is true', () => {
+  it('keeps navbar streamlined without intrusive live stream badges', () => {
     render(<Navbar {...defaultProps} isConnected={true} />);
-    expect(screen.getByText('Live Stream')).toBeInTheDocument();
-    expect(screen.getByText('#sess_a')).toBeInTheDocument();
-  });
-
-  it('renders snapshot badge when isConnected is false', () => {
-    render(<Navbar {...defaultProps} isConnected={false} sessionId={undefined} />);
-    expect(screen.getByText('Snapshot')).toBeInTheDocument();
-    expect(screen.getByText('#ready')).toBeInTheDocument();
+    expect(screen.queryByText('Live Stream')).not.toBeInTheDocument();
+    expect(screen.queryByText('Snapshot')).not.toBeInTheDocument();
   });
 
   it('renders active filename and function breadcrumbs', () => {
@@ -69,13 +63,13 @@ describe('Navbar Component', () => {
     const onPageChange = vi.fn();
     render(<Navbar {...defaultProps} onPageChange={onPageChange} />);
 
-    fireEvent.click(screen.getByText('Hunter'));
+    fireEvent.click(screen.getByText('Timeline Replay'));
     expect(onPageChange).toHaveBeenCalledWith('hunter');
 
-    fireEvent.click(screen.getByText('Playground'));
+    fireEvent.click(screen.getByText('Live Sandbox'));
     expect(onPageChange).toHaveBeenCalledWith('playground');
 
-    fireEvent.click(screen.getByText('Birdseye'));
+    fireEvent.click(screen.getByText('Expression Flow'));
     expect(onPageChange).toHaveBeenCalledWith('birdseye');
   });
 

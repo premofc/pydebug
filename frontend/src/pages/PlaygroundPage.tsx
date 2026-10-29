@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Play,
   FlaskConical,
@@ -60,6 +60,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
 }) => {
   const [functions, setFunctions] = useState<FunctionSignature[]>([]);
   const [selectedFunc, setSelectedFunc] = useState<FunctionSignature | null>(initialFunction || null);
+  const activeFuncRef = useRef<FunctionSignature | null>(initialFunction || null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showScenarios, setShowScenarios] = useState<boolean>(false);
   const [argsJson, setArgsJson] = useState<string>(() => {
@@ -98,12 +99,13 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
           const data: FunctionSignature[] = await res.json();
           if (data && data.length > 0) {
             setFunctions(data);
-            const target = initialFunction || selectedFunc;
+            const target = activeFuncRef.current || initialFunction || selectedFunc;
             const matched = target
               ? data.find((f) => f.name === target.name && f.file_path === target.file_path) || target
               : data[0];
-            setSelectedFunc(matched);
-            if (!initialFunction && !selectedFunc) {
+            if (matched) {
+              activeFuncRef.current = matched;
+              setSelectedFunc(matched);
               if (matched.sample_valid && Object.keys(matched.sample_valid).length > 0) {
                 setArgsJson(JSON.stringify(matched.sample_valid, null, 2));
               } else {
@@ -147,12 +149,13 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
   // function and load an editable argument template for it.
   useEffect(() => {
     if (!initialFunction) return;
+    activeFuncRef.current = initialFunction;
     const matched = functions.find(
       (f) => f.name === initialFunction.name && f.file_path === initialFunction.file_path
     );
     handleSelectFunction(matched || initialFunction);
     onConsumeInitialFunction?.();
-  }, [initialFunction]);
+  }, [initialFunction, functions]);
 
   const filteredFunctions = useMemo(() => {
     if (!searchQuery.trim()) return functions;
@@ -166,6 +169,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
   }, [functions, searchQuery]);
 
   const handleSelectFunction = (func: FunctionSignature) => {
+    activeFuncRef.current = func;
     setSelectedFunc(func);
     if (func.sample_valid && Object.keys(func.sample_valid).length > 0) {
       setArgsJson(JSON.stringify(func.sample_valid, null, 2));

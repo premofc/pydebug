@@ -5,15 +5,24 @@ import { DashboardPage } from './pages/DashboardPage';
 import { BirdseyePage } from './pages/BirdseyePage';
 import { HunterPage } from './pages/HunterPage';
 import { PlaygroundPage } from './pages/PlaygroundPage';
-import { MOCK_TRACE_SESSION } from './data/mockData';
 import type { TraceSession, ThemeMode, AIProviderConfig, FunctionSignature, PageId } from './types';
+
+export const EMPTY_TRACE_SESSION: TraceSession = {
+  id: '',
+  title: '',
+  created_at: '',
+  files: [],
+  file_sources: [],
+  events: [],
+  stats: { total_events: 0, files_count: 0, duration_ms: 0, max_depth: 0 },
+};
 
 export const App: React.FC = () => {
   const [theme, setTheme] = useState<ThemeMode>(() => {
     return (localStorage.getItem('pydebug_theme') as ThemeMode) || 'dark';
   });
   const [currentPage, setCurrentPage] = useState<PageId>('dashboard');
-  const [session, setSession] = useState<TraceSession>(MOCK_TRACE_SESSION);
+  const [session, setSession] = useState<TraceSession>(EMPTY_TRACE_SESSION);
   // The mock is only a placeholder for the Birdseye/Hunter views until real
   // trace data arrives; the navbar must not present it as a real session.
   const [hasRealSession, setHasRealSession] = useState(false);
@@ -103,27 +112,50 @@ export const App: React.FC = () => {
 
     fetchLatestSession();
 
-    try {
-      sse = new EventSource('/api/stream');
-      sse.onopen = () => setIsConnected(true);
-      sse.onmessage = (e) => {
-        try {
-          const payload = JSON.parse(e.data);
-          if (payload.type === 'new_session' && payload.session) {
-            setSession(payload.session);
-            setHasRealSession(true);
-            setIsConnected(true);
+    let isUnmounted = false;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const connectSSE = () => {
+      if (isUnmounted) return;
+      try {
+        sse = new EventSource('/api/stream');
+        sse.onopen = () => setIsConnected(true);
+        sse.onmessage = (e) => {
+          try {
+            const payload = JSON.parse(e.data);
+            if (payload.type === 'new_session' && payload.session) {
+              setSession(payload.session);
+              setHasRealSession(true);
+              setIsConnected(true);
+            }
+          } catch (err) {
+            // ignore keepalive pings
           }
-        } catch (err) {
-          // ignore keepalive pings
+        };
+        sse.onerror = () => {
+          setIsConnected(false);
+          if (sse) {
+            sse.close();
+            sse = null;
+          }
+          if (!isUnmounted) {
+            // Backoff 5s before reconnecting so tab doesn't spin in tight CPU loop when server is stopped
+            reconnectTimeout = setTimeout(connectSSE, 5000);
+          }
+        };
+      } catch (err) {
+        setIsConnected(false);
+        if (!isUnmounted) {
+          reconnectTimeout = setTimeout(connectSSE, 5000);
         }
-      };
-      sse.onerror = () => setIsConnected(false);
-    } catch (err) {
-      setIsConnected(false);
-    }
+      }
+    };
+
+    connectSSE();
 
     return () => {
+      isUnmounted = true;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (sse) sse.close();
     };
   }, []);
@@ -191,6 +223,7 @@ export const App: React.FC = () => {
           <BirdseyePage
             session={session}
             onCallChange={handleActiveFileChange}
+            onOpenSandbox={() => setCurrentPage('playground')}
           />
         )}
         {currentPage === 'hunter' && (
@@ -199,6 +232,7 @@ export const App: React.FC = () => {
             onEventChange={handleActiveFileChange}
             aiConfig={aiConfig}
             onOpenAiSettings={openAiSettings}
+            onOpenSandbox={() => setCurrentPage('playground')}
           />
         )}
         {currentPage === 'playground' && (

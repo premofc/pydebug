@@ -2,6 +2,8 @@ export interface SubExpression {
   text: string;
   val: string;
   type_name?: string;
+  is_bool?: boolean;
+  bool_val?: boolean;
   start_col?: number;
   end_col?: number;
   line?: number;

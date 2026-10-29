@@ -8,7 +8,10 @@ import {
   Check, 
   Trash2, 
   Clock, 
-  Layers 
+  Layers,
+  Eye,
+  Pin,
+  FlaskConical
 } from 'lucide-react';
 import type { TraceSession, SubExpression, PinnedExpression } from '../types';
 import { buildCallRecords, buildLineExprs } from '../utils/calls';
@@ -17,9 +20,10 @@ import type { CallRecord } from '../utils/calls';
 interface BirdseyePageProps {
   session: TraceSession;
   onCallChange?: (fileName: string, funcName: string) => void;
+  onOpenSandbox?: () => void;
 }
 
-export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChange }) => {
+export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChange, onOpenSandbox }) => {
   const [selectedCallId, setSelectedCallId] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'values' | 'locals' | 'pinned'>('values');
@@ -138,6 +142,39 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
       [fn]: prev[fn] === undefined ? false : !prev[fn],
     }));
   };
+
+  if (calls.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 font-sans">
+        <div className="max-w-md w-full p-8 rounded-2xl bg-white dark:bg-[#0c1220] border border-slate-200/80 dark:border-slate-800/80 shadow-xl flex flex-col items-center text-center">
+          <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 flex items-center justify-center mb-4">
+            <Eye className="w-7 h-7 text-indigo-500" />
+          </div>
+          <h2 className="text-lg font-bold">No Expression Traces Recorded</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
+            Expression Flow evaluates every sub-expression, condition, and return value inside each function call (just like the Alex Hall Birdseye debugger).
+          </p>
+          <div className="mt-6 flex flex-col sm:flex-row gap-3 w-full">
+            <button
+              onClick={onOpenSandbox}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25 transition-all cursor-pointer"
+            >
+              <FlaskConical className="w-4 h-4" />
+              <span>Open Live Sandbox</span>
+            </button>
+          </div>
+          <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800/60 w-full text-left font-mono text-[11px] text-slate-500">
+            <span className="text-slate-400"># or trace code directly in Python:</span>
+            <div className="mt-1 p-2.5 rounded-lg bg-slate-900 text-slate-200 border border-slate-800">
+              from pydebug import tracer<br/>
+              with tracer:<br/>
+              &nbsp;&nbsp;&nbsp;&nbsp;my_function(...)
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 font-sans transition-colors">
@@ -312,11 +349,53 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                     </span>
                   </div>
 
+                  {/* Alex Hall Birdseye-style Branch Decision Pill on if/elif lines */}
+                  {(() => {
+                    const isConditionLine = /^\s*(if|elif)\s+/.test(lineText);
+                    if (!isConditionLine || lineExprs.length === 0) return null;
+                    const trueExpr = lineExprs.find(e => e.val === 'True' || e.val === 'true' || (e.is_bool && e.bool_val === true));
+                    const falseExpr = lineExprs.find(e => e.val === 'False' || e.val === 'false' || (e.is_bool && e.bool_val === false));
+                    if (trueExpr) {
+                      return (
+                        <div className="ml-8 mt-1 flex items-center">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                            ✔ Branch Taken (True)
+                          </span>
+                        </div>
+                      );
+                    }
+                    if (falseExpr) {
+                      return (
+                        <div className="ml-8 mt-1 flex items-center">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30">
+                            ✖ Branch Skipped (False)
+                          </span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
                   {hasExprs && (
                     <div className="ml-8 mt-1 flex flex-wrap items-center gap-1.5 select-none pt-0.5">
                       {lineExprs.map((expr, i) => {
                         const isSelected = selectedExprText === expr.text;
                         const isHovered = hoveredExpr?.text === expr.text;
+                        const isTrue = expr.val === 'True' || expr.val === 'true' || (expr.is_bool && expr.bool_val === true);
+                        const isFalse = expr.val === 'False' || expr.val === 'false' || (expr.is_bool && expr.bool_val === false);
+
+                        let badgeCls = 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/[0.12] hover:border-indigo-400 dark:hover:border-indigo-500';
+                        if (isSelected || isHovered) {
+                          badgeCls = isTrue
+                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm ring-2 ring-emerald-400/40'
+                            : isFalse
+                            ? 'bg-rose-600 text-white border-rose-700 shadow-sm ring-2 ring-rose-400/40'
+                            : 'bg-indigo-600 text-white border-indigo-700 shadow-sm';
+                        } else if (isTrue) {
+                          badgeCls = 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 font-semibold hover:border-emerald-500';
+                        } else if (isFalse) {
+                          badgeCls = 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-700 font-semibold hover:border-rose-500';
+                        }
 
                         return (
                           <button
@@ -327,17 +406,19 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                             }}
                             onMouseEnter={() => setHoveredExpr(expr)}
                             onMouseLeave={() => setHoveredExpr(null)}
-                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border transition-all ${
-                              isSelected || isHovered
-                                ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm'
-                                : 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/[0.12] hover:border-indigo-400 dark:hover:border-indigo-500'
-                            }`}
+                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border transition-all ${badgeCls}`}
                             title={`Click to inspect or pin: ${expr.text}`}
                           >
                             <span className="truncate max-w-[160px] opacity-90">{expr.text}</span>
-                            <span className="font-bold opacity-100 text-emerald-600 dark:text-emerald-400 group-hover:text-white">
-                              = {expr.val}
-                            </span>
+                            {isTrue ? (
+                              <span className="font-bold">✔ True</span>
+                            ) : isFalse ? (
+                              <span className="font-bold">✖ False</span>
+                            ) : (
+                              <span className="font-bold opacity-100 text-emerald-600 dark:text-emerald-400 group-hover:text-white">
+                                = {expr.val}
+                              </span>
+                            )}
                           </button>
                         );
                       })}
@@ -346,6 +427,62 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                 </div>
               );
             })}
+          </div>
+
+          {/* Sticky Bottom Live Value Inspection Bar (Real Birdseye Inspector) */}
+          <div className="border-t border-slate-200 dark:border-white/[0.08] bg-slate-50/95 dark:bg-[#090e1a]/95 px-4 py-2 flex items-center justify-between gap-3 text-xs font-mono shrink-0 select-none">
+            {hoveredExpr || selectedExprText ? (
+              (() => {
+                const activeExpr = hoveredExpr || evaluatedExpressionsList.find((e) => e.text === selectedExprText);
+                if (!activeExpr) {
+                  return <span className="text-slate-400 text-[11px]">Hover or click any expression above to inspect live value</span>;
+                }
+                const isTrue = activeExpr.val === 'True' || activeExpr.val === 'true';
+                const isFalse = activeExpr.val === 'False' || activeExpr.val === 'false';
+                return (
+                  <div className="flex items-center gap-3 w-full min-w-0">
+                    <span className="text-slate-400 text-[10px] uppercase font-semibold shrink-0">Expression:</span>
+                    <span className="px-2 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.1] font-semibold text-slate-800 dark:text-slate-200 truncate max-w-xs">
+                      {activeExpr.text}
+                    </span>
+                    <span className="text-slate-400 text-[10px] uppercase font-semibold shrink-0">Value:</span>
+                    <span className={`px-2 py-0.5 rounded border font-bold truncate max-w-sm ${
+                      isTrue ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' :
+                      isFalse ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30' :
+                      'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20'
+                    }`}>
+                      {isTrue ? '✔ True' : isFalse ? '✖ False' : activeExpr.val}
+                    </span>
+                    {activeExpr.type_name && (
+                      <span className="text-[10px] text-slate-400 font-mono shrink-0 hidden sm:inline">
+                        type: <strong className="text-slate-600 dark:text-slate-300">{activeExpr.type_name}</strong>
+                      </span>
+                    )}
+                    <div className="ml-auto flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => handleCopy(activeExpr.val, `bar-${activeExpr.text}`)}
+                        className="px-2 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.1] text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 text-[11px] cursor-pointer"
+                      >
+                        {copiedKey === `bar-${activeExpr.text}` ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedKey === `bar-${activeExpr.text}` ? 'Copied' : 'Copy'}</span>
+                      </button>
+                      <button
+                        onClick={() => handleTogglePin(activeExpr)}
+                        className="px-2 py-1 rounded bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-300 flex items-center gap-1 text-[11px] cursor-pointer"
+                      >
+                        <Pin className="w-3 h-3" />
+                        <span>{pinnedList.some((p) => p.text === activeExpr.text) ? 'Unpin' : 'Pin'}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()
+            ) : (
+              <div className="flex items-center gap-2 text-slate-400 text-[11px]">
+                <span className="w-2 h-2 rounded-full bg-slate-400" />
+                <span>Hover or click any expression to inspect full value representation and type details</span>
+              </div>
+            )}
           </div>
         </main>
 

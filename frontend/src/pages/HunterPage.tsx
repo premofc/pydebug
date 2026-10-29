@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Play,
+  FlaskConical,
   Pause,
   SkipBack,
   SkipForward,
@@ -27,9 +28,10 @@ interface HunterPageProps {
   onEventChange?: (fileName: string, funcName: string) => void;
   aiConfig?: AIProviderConfig | null;
   onOpenAiSettings?: () => void;
+  onOpenSandbox?: () => void;
 }
 
-export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, aiConfig, onOpenAiSettings }) => {
+export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, aiConfig, onOpenAiSettings, onOpenSandbox }) => {
   const events = session.events || [];
   const [currentIdx, setCurrentIdx] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -57,19 +59,25 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
     }
   }, [currentEvent, session.files, onEventChange]);
 
-  // If the session contains an exception, auto-focus on the exception event
+  // Auto-focus logic: start at step 0 (first executed line) unless uncaught exception
   useEffect(() => {
     if (events.length > 0) {
-      const excIdx = events.findIndex(
-        (ev) => ev.kind === 'exception' || Boolean(ev.exc_type) || ev.line === (session.stats as any)?.error_line
-      );
-      if (excIdx !== -1) {
-        setCurrentIdx(excIdx);
-      } else {
-        setCurrentIdx(0);
+      const hasUncaught = Boolean(session.stats?.has_uncaught_error);
+      const errorLine = (session.stats as any)?.error_line;
+      if (hasUncaught && errorLine !== undefined) {
+        const excIdx = events.findIndex(
+          (ev) => ev.kind === 'exception' || Boolean(ev.exc_type) || ev.line === errorLine
+        );
+        if (excIdx !== -1) {
+          setCurrentIdx(excIdx);
+          return;
+        }
       }
+      setCurrentIdx(0);
+    } else {
+      setCurrentIdx(0);
     }
-  }, [session.id]);
+  }, [session.id, session.events]);
 
   // Auto-scroll code view to keep current executing line in view
   useEffect(() => {
@@ -321,6 +329,39 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
         return 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/[0.12]';
     }
   };
+
+  if (events.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 font-sans">
+        <div className="max-w-md w-full p-8 rounded-2xl bg-white dark:bg-[#0c1220] border border-slate-200/80 dark:border-slate-800/80 shadow-xl flex flex-col items-center text-center">
+          <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 flex items-center justify-center mb-4">
+            <Play className="w-7 h-7 fill-current pl-1" />
+          </div>
+          <h2 className="text-lg font-bold">No Traced Execution Loaded</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
+            Timeline Replay allows you to step through execution event-by-event with variable mutations and AST sub-expressions.
+          </p>
+          <div className="mt-6 flex flex-col sm:flex-row gap-3 w-full">
+            <button
+              onClick={onOpenSandbox}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25 transition-all cursor-pointer"
+            >
+              <FlaskConical className="w-4 h-4" />
+              <span>Open Live Sandbox</span>
+            </button>
+          </div>
+          <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800/60 w-full text-left font-mono text-[11px] text-slate-500">
+            <span className="text-slate-400"># or trace code directly in Python:</span>
+            <div className="mt-1 p-2.5 rounded-lg bg-slate-900 text-slate-200 border border-slate-800">
+              from pydebug import tracer<br/>
+              with tracer:<br/>
+              &nbsp;&nbsp;&nbsp;&nbsp;my_function(...)
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors">
@@ -604,30 +645,6 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
               </button>
 
               <button
-                onClick={() => setActiveTab('ai')}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors ${
-                  activeTab === 'ai'
-                    ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white shadow-xs font-semibold'
-                    : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
-                }`}
-              >
-                <Bot className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-300" />
-                <span>AI Co-Pilot</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('delta')}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors ${
-                  activeTab === 'delta'
-                    ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white shadow-xs font-semibold'
-                    : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Delta</span>
-              </button>
-
-              <button
                 onClick={() => setActiveTab('stack')}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors ${
                   activeTab === 'stack'
@@ -637,6 +654,18 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
               >
                 <CornerDownRight className="w-3.5 h-3.5" />
                 <span>Call Stack</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('ai')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors ${
+                  activeTab === 'ai'
+                    ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white shadow-xs font-semibold'
+                    : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <Bot className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-300" />
+                <span>AI Co-Pilot</span>
               </button>
             </div>
           </div>

@@ -42,6 +42,8 @@ def _detailed_value_repr(val: Any) -> dict[str, Any]:
         "val": short_val,
         "type": t_name,
         "is_container": isinstance(val, (list, tuple, dict, set)),
+        "is_bool": isinstance(val, bool) or val is True or val is False,
+        "bool_val": bool(val) if (isinstance(val, bool) or val in (True, False)) else None,
     }
 
     if isinstance(val, (list, tuple, set)):
@@ -78,6 +80,8 @@ def _spy_eval(val: Any, expr_src: str, lineno: int, col_start: int, col_end: int
             "end_col": col_end,
             "node_type": node_type,
             "is_container": meta.get("is_container", False),
+            "is_bool": meta.get("is_bool", False),
+            "bool_val": meta.get("bool_val"),
             "length": meta.get("length"),
             "items_preview": meta.get("items_preview"),
         })

@@ -10,8 +10,6 @@ import {
   Play,
   FlaskConical,
   LayoutDashboard,
-  CheckCircle2,
-  Copy,
   Bot
 } from 'lucide-react';
 import type { ThemeMode, AIProviderConfig, PageId } from '../types';
@@ -40,27 +38,20 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentPage,
   onPageChange,
   stats,
-  isConnected,
-  sessionId,
+  isConnected: _isConnected,
+  sessionId: _sessionId,
   activeFileName,
   activeFunctionName,
   aiConfig,
   onOpenAiSettings,
 }) => {
-  const [copied, setCopied] = React.useState(false);
 
-  const copySessionId = () => {
-    if (!sessionId) return;
-    navigator.clipboard.writeText(sessionId);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
 
   const navItems = [
     { id: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard, desc: 'Traced Sessions & Operations' },
-    { id: 'hunter' as const, label: 'Hunter', icon: Play, desc: 'Step-by-Step VCR Line Replay' },
-    { id: 'birdseye' as const, label: 'Birdseye', icon: Eye, desc: 'Call Hierarchy & Expression Inspector' },
-    { id: 'playground' as const, label: 'Playground', icon: FlaskConical, desc: 'Interactive Function Runner & Tests' },
+    { id: 'hunter' as const, label: 'Timeline Replay', icon: Play, desc: 'Step-by-Step VCR Line Replay' },
+    { id: 'birdseye' as const, label: 'Expression Flow', icon: Eye, desc: 'Expression & Condition Flow Inspector' },
+    { id: 'playground' as const, label: 'Live Sandbox', icon: FlaskConical, desc: 'Interactive Function Runner & Sandbox' },
   ];
 
   return (
@@ -79,35 +70,14 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-sm tracking-tight text-slate-900 dark:text-white">PyDebug</span>
               <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 font-mono">
-                v0.1.4
+                v0.1.5
               </span>
             </div>
             <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium tracking-wide">STUDIO</span>
           </div>
         </div>
 
-        <div className="h-5 w-[1px] bg-slate-200 dark:bg-white/[0.08]" />
 
-        {/* Live SSE Status Pill */}
-        <div 
-          onClick={copySessionId}
-          title="Click to copy session ID"
-          className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-mono bg-slate-100/90 dark:bg-[#050811] border border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:border-indigo-500/50 cursor-pointer transition-all shadow-xs"
-        >
-          <span className="relative flex h-2 w-2">
-            {isConnected && (
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            )}
-            <span className={`relative inline-flex rounded-full h-2 w-2 ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-          </span>
-          <span className="font-sans text-[11px] font-medium text-slate-600 dark:text-slate-300">
-            {isConnected ? 'Live Stream' : 'Snapshot'}
-          </span>
-          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono flex items-center gap-1">
-            #{sessionId ? sessionId.slice(0, 6) : 'ready'}
-            {copied ? <CheckCircle2 className="w-3 h-3 text-emerald-500" /> : <Copy className="w-2.5 h-2.5 opacity-60" />}
-          </span>
-        </div>
 
         {/* Active Trace File Breadcrumb (visible on 2xl+ to prevent collision with mode switcher) */}
         <div className="hidden 2xl:flex items-center gap-2 text-xs font-mono bg-slate-100/80 dark:bg-[#050811]/60 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-white/[0.08] max-w-[190px] shrink min-w-0 overflow-hidden">

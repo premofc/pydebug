@@ -164,7 +164,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors">
       {/* Hero + system status */}
-      <div className="border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-[#060911]/80 backdrop-blur-xl px-6 py-5">
+      <div className="border-b border-slate-200/60 dark:border-slate-800/60 bg-slate-50 dark:bg-[#060911] px-6 py-5">
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
             <div>

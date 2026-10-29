@@ -40,20 +40,20 @@ describe('App Root Component', () => {
   it('switches between pages when navigation buttons are clicked', async () => {
     render(<App />);
 
-    // Click Hunter navigation pill
+    // Click Hunter navigation pill (shows clean empty state when no trace loaded)
     const hunterBtn = screen.getByTitle(/Step-by-Step VCR Line Replay/i);
     fireEvent.click(hunterBtn);
-    expect(screen.getByTitle(/step backward/i)).toBeInTheDocument();
+    expect(screen.getByText('No Traced Execution Loaded')).toBeInTheDocument();
 
     // Click Playground / Sandbox navigation pill
     const sandboxBtn = screen.getByTitle(/Interactive Function Runner/i);
     fireEvent.click(sandboxBtn);
     expect(screen.getByText('Target Functions')).toBeInTheDocument();
 
-    // Click Birdseye navigation pill
-    const flameBtn = screen.getByTitle(/Call Hierarchy & Expression Inspector/i);
+    // Click Birdseye navigation pill (shows clean empty state when no trace loaded)
+    const flameBtn = screen.getByTitle(/Expression.*Inspector/i);
     fireEvent.click(flameBtn);
-    expect(screen.getByPlaceholderText(/filter calls/i)).toBeInTheDocument();
+    expect(screen.getByText('No Expression Traces Recorded')).toBeInTheDocument();
   });
 
   it('toggles dark and light mode', async () => {

@@ -4,6 +4,21 @@ import { HunterPage } from '../src/pages/HunterPage';
 import type { TraceSession } from '../types';
 
 describe('HunterPage Component', () => {
+  const emptySession: TraceSession = {
+    id: '',
+    title: '',
+    files: [],
+    file_sources: {},
+    events: [],
+    stats: {
+      total_events: 0,
+      files_count: 0,
+      duration_ms: 0,
+      max_depth: 0,
+      has_uncaught_error: false,
+    },
+  };
+
   const normalSession: TraceSession = {
     id: 'sess_normal_1',
     title: 'test_normal_run',
@@ -98,6 +113,15 @@ describe('HunterPage Component', () => {
     vi.restoreAllMocks();
   });
 
+  it('renders empty state when no events exist', () => {
+    const onOpenSandbox = vi.fn();
+    render(<HunterPage session={emptySession} onOpenSandbox={onOpenSandbox} />);
+    expect(screen.getByText('No Traced Execution Loaded')).toBeInTheDocument();
+    const btn = screen.getByRole('button', { name: /open live sandbox/i });
+    fireEvent.click(btn);
+    expect(onOpenSandbox).toHaveBeenCalled();
+  });
+
   it('renders source code lines and active event step', () => {
     render(<HunterPage session={normalSession} />);
     expect(screen.getByText('def compute(a, b):')).toBeInTheDocument();
@@ -126,7 +150,7 @@ describe('HunterPage Component', () => {
   });
 
   it('displays exception event indicators when active event is an exception', () => {
-    // When session has an exception, HunterPage auto-focuses on it
+    // When session has an uncaught error, HunterPage auto-focuses on it
     render(<HunterPage session={exceptionSession} />);
 
     // Auto-focuses on step 3 (#3) where exception occurred
@@ -134,13 +158,13 @@ describe('HunterPage Component', () => {
     expect(screen.getByText('exception')).toBeInTheDocument();
   });
 
-  it('switches tabs to Delta and AI tabs', async () => {
+  it('switches tabs to Call Stack and AI tabs', async () => {
     render(<HunterPage session={normalSession} />);
 
-    // Switch to Delta tab
-    const deltaTab = screen.getByRole('button', { name: /delta/i });
-    fireEvent.click(deltaTab);
-    expect(screen.getByText(/Variable values changed on line/i)).toBeInTheDocument();
+    // Switch to Call Stack tab
+    const stackTab = screen.getByRole('button', { name: /call stack/i });
+    fireEvent.click(stackTab);
+    expect(screen.getByText(/Active execution call frames/i)).toBeInTheDocument();
 
     // Switch to AI tab
     const aiTab = screen.getByRole('button', { name: /ai co-pilot/i });
