@@ -3,7 +3,11 @@ export interface SubExpression {
   val: string;
   type_name?: string;
   is_bool?: boolean;
-  bool_val?: boolean;
+  bool_val?: boolean | null;
+  truthy?: boolean;
+  is_container?: boolean;
+  length?: number;
+  items_preview?: string[] | Record<string, string>;
   start_col?: number;
   end_col?: number;
   line?: number;

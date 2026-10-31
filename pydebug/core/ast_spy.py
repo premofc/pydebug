@@ -38,12 +38,14 @@ def _detailed_value_repr(val: Any) -> dict[str, Any]:
     except Exception:
         short_val = "<unprintable>"
 
+    is_bool = isinstance(val, bool) or val is True or val is False
     meta: dict[str, Any] = {
         "val": short_val,
         "type": t_name,
         "is_container": isinstance(val, (list, tuple, dict, set)),
-        "is_bool": isinstance(val, bool) or val is True or val is False,
-        "bool_val": bool(val) if (isinstance(val, bool) or val in (True, False)) else None,
+        "is_bool": is_bool,
+        "bool_val": bool(val) if is_bool else None,
+        "truthy": bool(val),
     }
 
     if isinstance(val, (list, tuple, set)):
@@ -84,6 +86,7 @@ def _spy_eval(val: Any, expr_src: str, lineno: int, col_start: int, col_end: int
             "bool_val": meta.get("bool_val"),
             "length": meta.get("length"),
             "items_preview": meta.get("items_preview"),
+            "truthy": meta.get("truthy"),
         })
     except Exception:
         pass
@@ -149,6 +152,24 @@ class ExpressionTransformer(ast.NodeTransformer):
         self.generic_visit(node)
         return self._wrap_node(node, "compare")
 
+    def visit_If(self, node: ast.If) -> ast.AST:
+        if isinstance(node.test, ast.Name):
+            node.test = self._wrap_node(node.test, "condition")
+        self.generic_visit(node)
+        return node
+
+    def visit_While(self, node: ast.While) -> ast.AST:
+        if isinstance(node.test, ast.Name):
+            node.test = self._wrap_node(node.test, "condition")
+        self.generic_visit(node)
+        return node
+
+    def visit_Return(self, node: ast.Return) -> ast.AST:
+        if node.value is not None and isinstance(node.value, ast.Name):
+            node.value = self._wrap_node(node.value, "return_val")
+        self.generic_visit(node)
+        return node
+
     def visit_UnaryOp(self, node: ast.UnaryOp) -> ast.AST:
         self.generic_visit(node)
         return self._wrap_node(node, "unary_op")
@@ -205,6 +226,18 @@ def inspect_expressions(fn: Callable[..., Any]) -> Callable[..., Any]:
         code_obj = compile(transformed, filename=inspect.getfile(fn), mode="exec")
         exec(code_obj, closure_dict)
         wrapped_fn = closure_dict[fn.__name__]
+
+        if inspect.ismethod(fn):
+            bound_inst = getattr(fn, "__self__", None)
+            if bound_inst is not None:
+                wrapped_fn = wrapped_fn.__get__(bound_inst, bound_inst.__class__)
+
+        if inspect.iscoroutinefunction(fn):
+            @functools.wraps(fn)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                return await wrapped_fn(*args, **kwargs)
+
+            return async_wrapper
 
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:

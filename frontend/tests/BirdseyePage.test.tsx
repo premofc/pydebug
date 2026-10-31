@@ -89,13 +89,13 @@ describe('BirdseyePage Component', () => {
   it('renders function call hierarchy and source lines', () => {
     render(<BirdseyePage session={mockSession} />);
     expect(screen.getAllByText('solve()').length).toBeGreaterThan(0);
-    expect(screen.getByText('def solve(x, y):')).toBeInTheDocument();
+    expect(screen.getAllByText('def solve(x, y):').length).toBeGreaterThan(0);
   });
 
   it('renders branch indicator and boolean highlights', () => {
     render(<BirdseyePage session={mockSession} />);
-    expect(screen.getByText(/Branch Taken \(True\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/✔ True/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Branch Taken \(True\)/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/✔ True/).length).toBeGreaterThan(0);
   });
 
   it('filters call records by search input', () => {

@@ -525,6 +525,78 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
             </div>
           )}
 
+          {/* PROMINENT SCOPE VARIABLES HUD */}
+          {currentEvent && Object.keys(currentVars).length > 0 && (
+            <div className="px-4 py-2.5 bg-slate-50/95 dark:bg-[#0b1325]/95 border-b border-slate-200/80 dark:border-white/[0.08] shadow-xs select-none shrink-0 font-mono">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    Scope Variables
+                  </span>
+                  <span className="px-1.5 py-0.2 rounded text-[10px] bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-semibold">
+                    {Object.keys(currentVars).length} active
+                  </span>
+                  {Object.keys(currentDiffs).length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded text-[10px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 font-bold">
+                      {Object.keys(currentDiffs).length} changed this line
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs scrollbar-thin">
+                {Object.entries(currentVars).map(([k, v]) => {
+                  const diff = currentDiffs[k];
+                  const wasChanged = Boolean(diff);
+                  return (
+                    <div
+                      key={k}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs shrink-0 border transition-all ${
+                        wasChanged
+                          ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-100 border-emerald-500/50 shadow-sm ring-1 ring-emerald-500/20'
+                          : 'bg-white dark:bg-slate-900/90 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-white/[0.1] hover:border-slate-300'
+                      }`}
+                    >
+                      <span className="font-semibold text-slate-600 dark:text-slate-400">
+                        {k}:
+                      </span>
+                      {wasChanged && diff.old !== '<unset>' && (
+                        <span className="text-[11px] text-slate-400 line-through truncate max-w-[80px]">
+                          {diff.old}
+                        </span>
+                      )}
+                      {wasChanged && diff.old !== '<unset>' && (
+                        <span className="text-emerald-500 text-[10px]">➔</span>
+                      )}
+                      <span className={`font-mono font-bold truncate max-w-[180px] ${
+                        wasChanged ? 'text-emerald-600 dark:text-emerald-300' : 'text-slate-900 dark:text-slate-100'
+                      }`}>
+                        {v}
+                      </span>
+                      {wasChanged && (
+                        <span className="text-[9px] px-1 py-0.2 uppercase font-extrabold rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                          CHANGED
+                        </span>
+                      )}
+                      <button
+                        onClick={() => copyToClipboard(`hud-${k}`, v)}
+                        className="ml-1 p-0.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                        title={`Copy ${k}`}
+                      >
+                        {copiedVar === `hud-${k}` ? (
+                          <Check className="w-3 h-3 text-emerald-500" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Code Viewer */}
           <div className="flex-1 overflow-auto font-mono text-[13px] leading-6 select-text p-2">
             {sourceLines.map((lineText, zeroIdx) => {
@@ -596,35 +668,7 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
             })}
           </div>
 
-          {/* Quick Active Variables Bar at bottom of code */}
-          {currentEvent && Object.keys(currentVars).length > 0 && (
-            <div className="h-9 px-4 bg-slate-100/80 dark:bg-[#090e1a]/90 border-t border-slate-200 dark:border-white/[0.08] flex items-center gap-2 overflow-x-auto select-none shrink-0 text-xs font-mono">
-              <span className="text-slate-400 text-[10px] uppercase font-semibold shrink-0">
-                Scope Vars:
-              </span>
-              {Object.entries(currentVars).slice(0, 6).map(([k, v]) => {
-                const wasChanged = Boolean(currentDiffs[k]);
-                return (
-                  <div
-                    key={k}
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] shrink-0 border ${
-                      wasChanged
-                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 font-medium'
-                        : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/[0.08]'
-                    }`}
-                  >
-                    <span>{k}:</span>
-                    <span className="font-semibold truncate max-w-[120px]">{v}</span>
-                  </div>
-                );
-              })}
-              {Object.keys(currentVars).length > 6 && (
-                <span className="text-slate-400 text-[10px] shrink-0">
-                  +{Object.keys(currentVars).length - 6} more
-                </span>
-              )}
-            </div>
-          )}
+
         </div>
 
         {/* RIGHT PANEL: RICH VARIABLE INSPECTOR & AI CO-PILOT DOCK */}

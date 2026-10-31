@@ -39,6 +39,18 @@ def safe_repr(v: Any, _depth: int = 0) -> str:
                 for k, val in list(v.items())[:20]
             )
             return "{" + inner + (", ..." if len(v) > 20 else "") + "}"
+        elif hasattr(v, "done") and hasattr(v, "result") and callable(v.done) and callable(v.result):
+            try:
+                if v.done():
+                    if hasattr(v, "cancelled") and v.cancelled():
+                        return "<Future cancelled>"
+                    return safe_repr(v.result(), _depth + 1)
+                else:
+                    return "(awaiting)"
+            except Exception as e:
+                return f"<Future error={type(e).__name__}: {e}>"
+        elif inspect.iscoroutine(v):
+            return f"<coroutine {getattr(v, '__name__', 'coro')}>"
         else:
             r = repr(v)
             if _depth < 2 and _ADDR_RE.match(r):
@@ -121,6 +133,21 @@ class PyTracer:
 
         lineno = frame.f_lineno
         func_name = frame.f_code.co_name
+
+        # Detect and normalize async coroutine suspend / resume transitions:
+        # When an async def awaits, Python settrace emits 'return' with the awaited future.
+        # When that future completes, it emits 'call' at the await instruction offset (>0).
+        is_coro = bool(getattr(frame.f_code, "co_flags", 0) & 0x80)
+        if is_coro:
+            if event == "return" and (hasattr(arg, "done") or type(arg).__name__ in ("Future", "Task", "_asyncio.Future")):
+                # Internal await suspension, not true function exit
+                return self._trace_fn
+            if event == "call" and getattr(frame, "f_lasti", 0) > 0:
+                # Coroutine resumed at await point, not initial function invocation
+                return self._trace_fn
+            if event == "exception" and isinstance(arg, tuple) and len(arg) >= 1 and isinstance(arg[0], type) and issubclass(arg[0], (StopIteration, GeneratorExit)):
+                # Internal asyncio loop completion signal
+                return self._trace_fn
 
         if event == "call":
             self._depth += 1

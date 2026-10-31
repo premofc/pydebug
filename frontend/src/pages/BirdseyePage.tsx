@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Search, 
   ChevronRight, 
@@ -11,10 +11,11 @@ import {
   Layers,
   Eye,
   Pin,
-  FlaskConical
+  FlaskConical,
+  Activity
 } from 'lucide-react';
 import type { TraceSession, SubExpression, PinnedExpression } from '../types';
-import { buildCallRecords, buildLineExprs } from '../utils/calls';
+import { buildCallRecords, buildLineExprs, isFuturePending } from '../utils/calls';
 import type { CallRecord } from '../utils/calls';
 
 interface BirdseyePageProps {
@@ -26,12 +27,14 @@ interface BirdseyePageProps {
 export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChange, onOpenSandbox }) => {
   const [selectedCallId, setSelectedCallId] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'values' | 'locals' | 'pinned'>('values');
+  const [activeTab, setActiveTab] = useState<'flow' | 'values' | 'locals' | 'pinned'>('flow');
   const [selectedExprText, setSelectedExprText] = useState<string | null>(null);
   const [hoveredExpr, setHoveredExpr] = useState<SubExpression | null>(null);
   const [pinnedList, setPinnedList] = useState<PinnedExpression[]>([]);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [expandedFuncs, setExpandedFuncs] = useState<Record<string, boolean>>({});
+
+  const lineRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
   // 1. Group events into structured function calls
   const calls = useMemo<CallRecord[]>(() => buildCallRecords(session), [session]);
@@ -57,6 +60,16 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
     const best = calls.find((c) => c.expressions.length > 0);
     return best || calls[0];
   }, [calls, selectedCallId]);
+
+  // Auto-scroll to active call's function definition or first executed line
+  useEffect(() => {
+    if (activeCall) {
+      const targetLine = activeCall.callLine || (activeCall.events.length > 0 ? activeCall.events[0].line : null);
+      if (targetLine && lineRefs.current[targetLine]) {
+        lineRefs.current[targetLine]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [activeCall?.id]);
 
   // Source lines for the active call's file
   const activeFileIdx = activeCall ? activeCall.file_idx : 0;
@@ -84,7 +97,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
   };
 
   // Notify parent of active file / func
-  React.useEffect(() => {
+  useEffect(() => {
     if (activeCall && onCallChange) {
       const fileName = session.files[activeCall.file_idx]?.split(/[\\/]/).pop() || 'script.py';
       onCallChange(fileName, activeCall.func);
@@ -93,6 +106,26 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
 
   // Map of line -> expressions evaluated during this call
   const lineExprsMap = useMemo(() => buildLineExprs(activeCall), [activeCall]);
+
+  // Map of line -> variable mutations during this call
+  const lineVarsDiffMap = useMemo(() => {
+    const map = new Map<number, Record<string, { old: string; new: string }>>();
+    if (!activeCall) return map;
+    activeCall.events.forEach((ev) => {
+      if (ev.vars_diff && Object.keys(ev.vars_diff).length > 0) {
+        const existing = map.get(ev.line) || {};
+        map.set(ev.line, { ...existing, ...ev.vars_diff });
+      }
+    });
+    return map;
+  }, [activeCall]);
+
+  // Return line of active call
+  const returnLine = useMemo(() => {
+    if (!activeCall) return null;
+    const returnEv = activeCall.events.slice().reverse().find((e) => e.kind === 'return' || e.return_val);
+    return returnEv ? returnEv.line : null;
+  }, [activeCall]);
 
   // Unique list of expressions evaluated in this call
   const evaluatedExpressionsList = useMemo(() => {
@@ -212,7 +245,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                   <div key={fn} className="rounded-md border border-slate-200/80 dark:border-white/[0.08]/80 overflow-hidden bg-slate-50/50 dark:bg-[#0c1322]/50 backdrop-blur-xs">
                     <button
                       onClick={() => toggleFuncExpand(fn)}
-                      className="w-full px-2.5 py-1.5 bg-slate-100/70 dark:bg-[#0e172a]/70 hover:bg-slate-100 dark:hover:bg-indigo-950/40 flex items-center justify-between text-left text-xs font-semibold text-slate-800 dark:text-slate-200 transition-colors"
+                      className="w-full px-2.5 py-1.5 bg-slate-100/70 dark:bg-[#0e172a]/70 hover:bg-slate-100 dark:hover:bg-indigo-950/40 flex items-center justify-between text-left text-xs font-semibold text-slate-800 dark:text-slate-200 transition-colors cursor-pointer"
                     >
                       <div className="flex items-center gap-1.5 truncate">
                         {isExpanded ? (
@@ -262,7 +295,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                                 {argsSummary}
                               </div>
 
-                              {call.return_val && (
+                              {call.return_val && !isFuturePending(call.return_val) && (
                                 <div className="text-[10px] text-emerald-600 dark:text-emerald-400 truncate font-medium flex items-center gap-1">
                                   <span>➔</span>
                                   <span className="truncate">{call.return_val}</span>
@@ -287,7 +320,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                 <span className="font-mono text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
                   {activeCall ? `${activeCall.func}()` : 'No function selected'}
                 </span>
-                {activeCall?.return_val && (
+                {activeCall?.return_val && !isFuturePending(activeCall.return_val) && (
                   <span className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 truncate max-w-xs">
                     ➔ {activeCall.return_val}
                   </span>
@@ -305,7 +338,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                 <button
                   onClick={() => handleStepCall(-1)}
                   disabled={currentCallIndex === 0}
-                  className="p-1 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 transition-colors"
+                  className="p-1 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 transition-colors cursor-pointer"
                   title="Previous call"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
@@ -316,7 +349,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                 <button
                   onClick={() => handleStepCall(1)}
                   disabled={currentCallIndex === currentFuncCalls.length - 1}
-                  className="p-1 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 transition-colors"
+                  className="p-1 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 transition-colors cursor-pointer"
                   title="Next call"
                 >
                   <ChevronRight className="w-3.5 h-3.5" />
@@ -329,13 +362,18 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
             {sourceLines.map((lineText, idx) => {
               const lineNum = idx + 1;
               const lineExprs = lineExprsMap.get(lineNum) || [];
+              const lineDiffs = lineVarsDiffMap.get(lineNum);
               const hasExprs = lineExprs.length > 0;
+              const isReturnStep = lineNum === returnLine;
 
               return (
                 <div
                   key={lineNum}
+                  ref={(el) => {
+                    lineRefs.current[lineNum] = el;
+                  }}
                   className={`group flex flex-col rounded px-2 py-1 transition-colors ${
-                    hasExprs
+                    hasExprs || lineDiffs || isReturnStep
                       ? 'bg-slate-50/70 dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-900/70'
                       : 'hover:bg-slate-50 dark:hover:bg-slate-900/20 opacity-75'
                   }`}
@@ -353,8 +391,8 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                   {(() => {
                     const isConditionLine = /^\s*(if|elif)\s+/.test(lineText);
                     if (!isConditionLine || lineExprs.length === 0) return null;
-                    const trueExpr = lineExprs.find(e => e.val === 'True' || e.val === 'true' || (e.is_bool && e.bool_val === true));
-                    const falseExpr = lineExprs.find(e => e.val === 'False' || e.val === 'false' || (e.is_bool && e.bool_val === false));
+                    const trueExpr = lineExprs.find(e => e.val === 'True' || e.val === 'true' || (e.is_bool && e.bool_val === true) || e.truthy === true);
+                    const falseExpr = lineExprs.find(e => e.val === 'False' || e.val === 'false' || (e.is_bool && e.bool_val === false) || e.truthy === false);
                     if (trueExpr) {
                       return (
                         <div className="ml-8 mt-1 flex items-center">
@@ -376,13 +414,30 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                     return null;
                   })()}
 
+                  {/* Variable Mutations on this line */}
+                  {lineDiffs && Object.keys(lineDiffs).length > 0 && (
+                    <div className="ml-8 mt-1 flex flex-wrap items-center gap-1.5 select-none pt-0.5">
+                      {Object.entries(lineDiffs).map(([vName, diff]) => (
+                        <span
+                          key={vName}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 shadow-xs"
+                        >
+                          <span className="font-semibold">{vName}</span>
+                          <span>:=</span>
+                          <span className="font-bold truncate max-w-[160px]">{diff.new}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Sub-expressions evaluated on this line */}
                   {hasExprs && (
                     <div className="ml-8 mt-1 flex flex-wrap items-center gap-1.5 select-none pt-0.5">
                       {lineExprs.map((expr, i) => {
                         const isSelected = selectedExprText === expr.text;
                         const isHovered = hoveredExpr?.text === expr.text;
-                        const isTrue = expr.val === 'True' || expr.val === 'true' || (expr.is_bool && expr.bool_val === true);
-                        const isFalse = expr.val === 'False' || expr.val === 'false' || (expr.is_bool && expr.bool_val === false);
+                        const isTrue = expr.val === 'True' || expr.val === 'true' || (expr.is_bool && expr.bool_val === true) || expr.truthy === true;
+                        const isFalse = expr.val === 'False' || expr.val === 'false' || (expr.is_bool && expr.bool_val === false) || expr.truthy === false;
 
                         let badgeCls = 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/[0.12] hover:border-indigo-400 dark:hover:border-indigo-500';
                         if (isSelected || isHovered) {
@@ -398,30 +453,75 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                         }
 
                         return (
-                          <button
-                            key={`expr-${lineNum}-${i}-${expr.text}`}
-                            onClick={() => {
-                              setSelectedExprText(expr.text);
-                              handleTogglePin(expr);
-                            }}
-                            onMouseEnter={() => setHoveredExpr(expr)}
-                            onMouseLeave={() => setHoveredExpr(null)}
-                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border transition-all ${badgeCls}`}
-                            title={`Click to inspect or pin: ${expr.text}`}
-                          >
-                            <span className="truncate max-w-[160px] opacity-90">{expr.text}</span>
-                            {isTrue ? (
-                              <span className="font-bold">✔ True</span>
-                            ) : isFalse ? (
-                              <span className="font-bold">✖ False</span>
-                            ) : (
-                              <span className="font-bold opacity-100 text-emerald-600 dark:text-emerald-400 group-hover:text-white">
-                                = {expr.val}
-                              </span>
+                          <div key={`expr-wrapper-${lineNum}-${i}-${expr.text}`} className="relative inline-block">
+                            <button
+                              onClick={() => {
+                                setSelectedExprText(expr.text);
+                                handleTogglePin(expr);
+                              }}
+                              onMouseEnter={() => setHoveredExpr(expr)}
+                              onMouseLeave={() => setHoveredExpr(null)}
+                              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border transition-all cursor-pointer ${badgeCls}`}
+                              title={`Click to pin or inspect: ${expr.text}`}
+                            >
+                              <span className="truncate max-w-[160px] opacity-90">{expr.text}</span>
+                              {isTrue ? (
+                                <span className="font-bold">✔ True</span>
+                              ) : isFalse ? (
+                                <span className="font-bold">✖ False</span>
+                              ) : (
+                                <span className="font-bold opacity-100 text-emerald-600 dark:text-emerald-400 group-hover:text-white">
+                                  = {expr.val}
+                                </span>
+                              )}
+                            </button>
+
+                            {/* Floating Rich Tooltip on Hover */}
+                            {isHovered && (
+                              <div className="absolute bottom-full left-0 mb-2 z-50 min-w-[260px] max-w-sm p-3 rounded-xl bg-slate-900/95 dark:bg-[#0c1322]/95 backdrop-blur-md text-white border border-slate-700/80 shadow-2xl text-xs font-mono select-text pointer-events-auto">
+                                <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-slate-800">
+                                  <span className="font-bold text-indigo-400 truncate max-w-[170px]">{expr.text}</span>
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300">{expr.type_name || 'expr'}</span>
+                                </div>
+                                <div className="mb-2 text-slate-200">
+                                  <span className="text-slate-400 text-[10px] uppercase font-semibold mr-1">Evaluated:</span>
+                                  <span className={`font-bold ${isTrue ? 'text-emerald-400' : isFalse ? 'text-rose-400' : 'text-emerald-300'}`}>
+                                    {isTrue ? '✔ True' : isFalse ? '✖ False' : expr.val}
+                                  </span>
+                                </div>
+                                {expr.length !== undefined && (
+                                  <div className="mb-1.5 text-[11px] text-slate-300">
+                                    Length: <strong className="text-white">{expr.length} items</strong>
+                                  </div>
+                                )}
+                                {expr.items_preview && (
+                                  <div className="mb-2 text-[10px] bg-slate-950 p-2 rounded-lg border border-slate-800 text-slate-300 overflow-x-auto max-h-24">
+                                    {Array.isArray(expr.items_preview) ? (
+                                      <div>[{expr.items_preview.join(', ')}]</div>
+                                    ) : (
+                                      <div>{JSON.stringify(expr.items_preview, null, 2)}</div>
+                                    )}
+                                  </div>
+                                )}
+                                <div className="flex items-center justify-between pt-1.5 border-t border-slate-800 text-[10px]">
+                                  <span className="text-slate-400">AST: {expr.node_type || 'expression'}</span>
+                                  <span className="text-indigo-400">Click to pin to watchlist</span>
+                                </div>
+                              </div>
                             )}
-                          </button>
+                          </div>
                         );
                       })}
+                    </div>
+                  )}
+
+                  {/* Return Line Highlight */}
+                  {isReturnStep && activeCall?.return_val && !isFuturePending(activeCall.return_val) && (
+                    <div className="ml-8 mt-1 flex items-center">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                        <span>➔</span>
+                        <span>Return: {activeCall.return_val}</span>
+                      </span>
                     </div>
                   )}
                 </div>
@@ -437,8 +537,8 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                 if (!activeExpr) {
                   return <span className="text-slate-400 text-[11px]">Hover or click any expression above to inspect live value</span>;
                 }
-                const isTrue = activeExpr.val === 'True' || activeExpr.val === 'true';
-                const isFalse = activeExpr.val === 'False' || activeExpr.val === 'false';
+                const isTrue = activeExpr.val === 'True' || activeExpr.val === 'true' || activeExpr.truthy === true;
+                const isFalse = activeExpr.val === 'False' || activeExpr.val === 'false' || activeExpr.truthy === false;
                 return (
                   <div className="flex items-center gap-3 w-full min-w-0">
                     <span className="text-slate-400 text-[10px] uppercase font-semibold shrink-0">Expression:</span>
@@ -491,8 +591,19 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
           <div className="h-11 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50/80 dark:bg-[#0b1220]/90 px-2 flex items-center justify-between">
             <div className="flex items-center gap-1">
               <button
+                onClick={() => setActiveTab('flow')}
+                className={`px-2 py-1 rounded text-xs font-medium transition-all cursor-pointer flex items-center gap-1 ${
+                  activeTab === 'flow'
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200 dark:border-white/[0.12]'
+                    : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <Activity className="w-3 h-3 text-indigo-500" />
+                <span>Flow ({activeCall ? activeCall.events.length : 0})</span>
+              </button>
+              <button
                 onClick={() => setActiveTab('values')}
-                className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${
+                className={`px-2 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
                   activeTab === 'values'
                     ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200 dark:border-white/[0.12]'
                     : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
@@ -502,7 +613,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
               </button>
               <button
                 onClick={() => setActiveTab('locals')}
-                className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${
+                className={`px-2 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
                   activeTab === 'locals'
                     ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200 dark:border-white/[0.12]'
                     : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
@@ -512,7 +623,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
               </button>
               <button
                 onClick={() => setActiveTab('pinned')}
-                className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${
+                className={`px-2 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
                   activeTab === 'pinned'
                     ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200 dark:border-white/[0.12]'
                     : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
@@ -524,6 +635,127 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
           </div>
 
           <div className="flex-1 overflow-y-auto p-3 font-mono text-xs">
+            {activeTab === 'flow' && (
+              <div className="space-y-2">
+                {!activeCall || activeCall.events.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 text-xs">
+                    No execution steps recorded for this call.
+                  </div>
+                ) : (
+                  activeCall.events.map((ev, stepIdx) => {
+                    const isCall = ev.kind === 'call';
+                    const isReturn = ev.kind === 'return';
+                    const isException = ev.kind === 'exception';
+                    const isCondition = /^\s*(if|elif)\s+/.test(ev.src);
+                    const diffEntries = Object.entries(ev.vars_diff || {});
+                    const hasDiffs = diffEntries.length > 0;
+                    const lineExprs = ev.expressions || [];
+
+                    return (
+                      <div
+                        key={`step-${stepIdx}-${ev.seq}`}
+                        onClick={() => {
+                          if (lineRefs.current[ev.line]) {
+                            lineRefs.current[ev.line]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          }
+                        }}
+                        className="p-2.5 rounded-md border border-slate-200 dark:border-white/[0.08] bg-slate-50/80 dark:bg-slate-900/40 hover:border-indigo-400 dark:hover:border-indigo-600 transition-all cursor-pointer group"
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold">
+                              #{stepIdx + 1}
+                            </span>
+                            <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                              Line {ev.line}
+                            </span>
+                          </div>
+                          <span className={`text-[10px] font-semibold uppercase px-1.5 py-0.2 rounded ${
+                            isCall ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400' :
+                            isReturn ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' :
+                            isException ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400' :
+                            'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                          }`}>
+                            {ev.kind}
+                          </span>
+                        </div>
+
+                        {/* Source code preview */}
+                        <div className="font-mono text-[11px] text-slate-800 dark:text-slate-200 truncate bg-white dark:bg-slate-950/80 p-1.5 rounded border border-slate-200/60 dark:border-white/[0.06] mb-1.5">
+                          {ev.src || `(line ${ev.line})`}
+                        </div>
+
+                        {/* Condition outcome if branch */}
+                        {isCondition && lineExprs.length > 0 && (() => {
+                          const trueExpr = lineExprs.find(e => e.val === 'True' || e.val === 'true' || (e.is_bool && e.bool_val === true) || e.truthy === true);
+                          const falseExpr = lineExprs.find(e => e.val === 'False' || e.val === 'false' || (e.is_bool && e.bool_val === false) || e.truthy === false);
+                          if (trueExpr) {
+                            return (
+                              <div className="mb-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                                <span>✔</span> Branch taken (True)
+                              </div>
+                            );
+                          }
+                          if (falseExpr) {
+                            return (
+                              <div className="mb-1 text-[10px] text-rose-600 dark:text-rose-400 font-bold flex items-center gap-1">
+                                <span>✖</span> Branch skipped (False)
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+
+                        {/* Variable mutations on this step */}
+                        {hasDiffs && (
+                          <div className="space-y-0.5 mb-1 text-[10px] font-mono">
+                            {diffEntries.map(([vName, diff]) => (
+                              <div key={vName} className="flex items-center gap-1 text-slate-600 dark:text-slate-400">
+                                <span className="font-semibold text-indigo-600 dark:text-indigo-400">{vName}</span>
+                                <span>:=</span>
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold truncate max-w-[140px]">{diff.new}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Sub-expressions evaluated on this step */}
+                        {lineExprs.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {lineExprs.map((expr, eIdx) => (
+                              <span
+                                key={eIdx}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-mono bg-indigo-50/70 dark:bg-indigo-950/40 text-slate-700 dark:text-slate-300 border border-indigo-200/50 dark:border-indigo-800/50"
+                              >
+                                <span className="opacity-80 truncate max-w-[90px]">{expr.text}</span>
+                                <span className="font-bold text-emerald-600 dark:text-emerald-400">= {expr.val}</span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Return outcome */}
+                        {isReturn && ev.return_val && !isFuturePending(ev.return_val) && (
+                          <div className="mt-1 text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                            <span>➔</span>
+                            <span className="truncate">Returned {ev.return_val}</span>
+                          </div>
+                        )}
+
+                        {/* Exception outcome */}
+                        {isException && ev.exc_type && (
+                          <div className="mt-1 text-[11px] font-mono font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                            <span>⚠</span>
+                            <span className="truncate">{ev.exc_type}: {ev.exc_val}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
             {activeTab === 'values' && (
               <div className="space-y-2">
                 {evaluatedExpressionsList.length === 0 ? (
@@ -562,7 +794,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                               e.stopPropagation();
                               handleCopy(expr.val, `val-${i}`);
                             }}
-                            className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                            className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
                             title="Copy value"
                           >
                             {copiedKey === `val-${i}` ? (
@@ -608,7 +840,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                   {pinnedList.length > 0 && (
                     <button
                       onClick={() => setPinnedList([])}
-                      className="text-rose-500 hover:text-rose-600 flex items-center gap-1 text-[10px]"
+                      className="text-rose-500 hover:text-rose-600 flex items-center gap-1 text-[10px] cursor-pointer"
                     >
                       <Trash2 className="w-3 h-3" /> Clear
                     </button>
@@ -631,7 +863,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                         </span>
                         <button
                           onClick={() => setPinnedList((prev) => prev.filter((item) => item.id !== p.id))}
-                          className="text-slate-400 hover:text-rose-500"
+                          className="text-slate-400 hover:text-rose-500 cursor-pointer"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>

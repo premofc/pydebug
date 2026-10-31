@@ -27,6 +27,7 @@ if sys.platform == "win32":
 
 from pydebug.core.events import TraceSession
 from pydebug.core.tracer import PyTracer, safe_repr
+from pydebug.core.ast_spy import clear_active_expressions, inspect_expressions
 from pydebug.server.ai import get_ai_manager
 
 logger = logging.getLogger("pydebug")
@@ -547,6 +548,14 @@ class PyDebugHandler(BaseHTTPRequestHandler):
                 }).encode("utf-8"))
                 return
 
+            clear_active_expressions()
+            exec_func = target_func
+            try:
+                exec_func = inspect_expressions(target_func)
+            except Exception as spy_err:
+                logger.debug("Expression instrumentation skipped for %s: %s", func_name, spy_err)
+                exec_func = target_func
+
             session = TraceSession(title=f"Live Run: {func_name}()")
             # Include all project directories so the tracer follows execution into services/repos
             include_paths = [str(cwd), str(p.parent), str(p)]
@@ -562,10 +571,10 @@ class PyDebugHandler(BaseHTTPRequestHandler):
 
             try:
                 call_kwargs = kwargs if isinstance(kwargs, dict) else {}
-                if inspect.iscoroutinefunction(target_func):
-                    ret_val = asyncio.run(target_func(**call_kwargs))
+                if inspect.iscoroutinefunction(exec_func):
+                    ret_val = asyncio.run(exec_func(**call_kwargs))
                 else:
-                    ret_val = target_func(**call_kwargs)
+                    ret_val = exec_func(**call_kwargs)
                     if inspect.iscoroutine(ret_val):
                         ret_val = asyncio.run(ret_val)
             except Exception as exc:
