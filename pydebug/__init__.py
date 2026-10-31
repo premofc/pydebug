@@ -11,7 +11,7 @@ from pydebug.core.ast_spy import inspect_expressions
 from pydebug.core.predicates import Predicate, Query, Q
 from pydebug.server.app import serve_trace, launch_viewer
 
-__version__ = "0.1.9"
+__version__ = "0.2.0"
 __all__ = [
     "PyTracer",
     "TraceEvent",

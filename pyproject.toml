@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pydebug-studio"
-version = "0.1.9"
+version = "0.2.0"
 description = "Next-Gen visual Python debugger and live runtime tracer with Swagger-grade dashboard, Hunter VCR timeline, and Birdseye AST expression inspection."
 readme = "README.md"
 authors = [{ name = "Premnathan", email = "premnath.4518@gmail.com" }]

@@ -93,7 +93,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-sm tracking-tight text-slate-900 dark:text-white">PyDebug</span>
               <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 font-mono">
-                v0.1.9
+                v0.2.0
               </span>
             </div>
             <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium tracking-wide">STUDIO</span>
@@ -136,14 +136,14 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               key={item.id}
               onClick={() => onPageChange(item.id)}
-              className={`flex items-center gap-1.5 px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-xs font-medium transition-all duration-150 whitespace-nowrap cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 ${
+              className={`group flex items-center gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-xs font-semibold transition-all duration-200 whitespace-nowrap cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 ${
                 isActive
-                  ? 'bg-white dark:bg-[#0c1220] text-indigo-700 dark:text-indigo-300 shadow-sm font-bold border border-slate-300 dark:border-indigo-500/40 ring-1 ring-indigo-500/20'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/70 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-100'
+                  ? 'bg-white dark:bg-[#0c1220] text-indigo-600 dark:text-indigo-300 shadow-sm border border-slate-200/90 dark:border-indigo-500/40 ring-1 ring-indigo-500/20 scale-[1.02]'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100 hover:scale-[1.01] active:scale-[0.98]'
               }`}
               title={item.desc}              aria-current={isActive ? 'page' : undefined}
             >
-              <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-indigo-600 dark:text-indigo-300 fill-current' : 'text-slate-400'}`} />
+              <Icon strokeWidth={isActive ? 2.3 : 2} className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${isActive ? 'text-indigo-600 dark:text-indigo-400 scale-110' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'}`} />
               <span className="hidden sm:inline">{item.label}</span>
             </button>
           );
@@ -156,10 +156,14 @@ export const Navbar: React.FC<NavbarProps> = ({
         <button
           onClick={onOpenAiSettings}
           title={`Active AI: ${aiConfig?.provider || 'Ollama'} (${aiConfig?.model || 'qwen2.5:7b-instruct'}) - Click to configure LLMs`}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono bg-slate-100/90 dark:bg-[#050811] hover:bg-slate-200 dark:hover:bg-indigo-950/40 border border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-200 hover:border-indigo-500/50 transition-all cursor-pointer shadow-xs group"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-mono bg-slate-100/90 dark:bg-[#050811] hover:bg-slate-200/80 dark:hover:bg-indigo-950/40 border border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-200 hover:border-indigo-500/50 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer shadow-2xs group"
         >
-          <Bot className="w-3.5 h-3.5 text-indigo-500 group-hover:scale-110 transition-transform" />
-          <span className="font-sans text-[11px] font-medium capitalize">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+          </span>
+          <Bot strokeWidth={2.2} className="w-3.5 h-3.5 text-indigo-500 group-hover:scale-110 transition-transform" />
+          <span className="font-sans text-[11px] font-semibold capitalize">
             {aiConfig?.provider || 'Ollama'}
           </span>
           <span className="text-[10px] text-slate-400 font-mono truncate max-w-[85px] hidden md:inline">
@@ -188,7 +192,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           href="https://github.com/premofc/pydebug"
           target="_blank"
           rel="noopener noreferrer"
-          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-white/[0.08] transition-colors shadow-xs"
+          className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/90 dark:border-white/[0.08] hover:scale-105 active:scale-95 transition-all duration-200 shadow-2xs"
           title="View PyDebug on GitHub"
         >
           <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
@@ -200,13 +204,13 @@ export const Navbar: React.FC<NavbarProps> = ({
         <button
           onClick={onToggleTheme}
           aria-label="Toggle theme"
-          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-white/[0.08] transition-colors shadow-xs"
+          className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/90 dark:border-white/[0.08] hover:scale-105 active:scale-95 transition-all duration-200 shadow-2xs cursor-pointer"
           title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} mode`}
         >
           {theme === 'dark' ? (
-            <Sun className="w-4 h-4 text-amber-400" />
+            <Sun strokeWidth={2.2} className="w-4 h-4 text-amber-400 transition-transform duration-200 hover:rotate-45" />
           ) : (
-            <Moon className="w-4 h-4 text-indigo-600" />
+            <Moon strokeWidth={2.2} className="w-4 h-4 text-indigo-600 transition-transform duration-200 hover:-rotate-12" />
           )}
         </button>
       </div>

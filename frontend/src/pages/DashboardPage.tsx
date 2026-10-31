@@ -7,7 +7,6 @@ import {
   Search,
   RefreshCw,
   Terminal,
-  Cpu,
   Radio,
   Code2,
   FileCode,
@@ -15,11 +14,39 @@ import {
   ChevronRight,
   ChevronLeft,
   Activity,
-  Layers,
   Clock,
   CircleX,
   SlidersHorizontal,
+  History,
+  Boxes,
+  GitCommitVertical,
+  Sparkles,
+  ArrowRight,
+  Copy,
+  Check,
+  Bot,
+  Server,
 } from 'lucide-react';
+
+const CopyButton: React.FC<{ text: string }> = ({ text }) => {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+      title="Copy to clipboard"
+    >
+      {copied ? <Check className="w-3.5 h-3.5 text-emerald-500 animate-in zoom-in-50" /> : <Copy className="w-3.5 h-3.5" />}
+    </button>
+  );
+};
 import type { FunctionSignature, SessionSummary, TraceSession } from '../types';
 import { buildCallRecords } from '../utils/calls';
 import type { CallRecord } from '../utils/calls';
@@ -176,55 +203,110 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
 
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors">
-      {/* Hero + system status */}
-      <div className="border-b border-slate-200/60 dark:border-slate-800/60 bg-slate-50 dark:bg-[#060911] px-6 py-5">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+      {/* Hero + system status with ambient radial glow */}
+      <div className="relative overflow-hidden border-b border-slate-200/70 dark:border-white/[0.08] bg-white/80 dark:bg-[#060911]/90 backdrop-blur-md px-6 py-6 transition-colors">
+        <div className="absolute top-0 right-1/4 w-96 h-36 bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent blur-3xl pointer-events-none" />
+        
+        <div className="max-w-6xl mx-auto relative z-10">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-700 dark:from-white dark:via-indigo-200 dark:to-slate-300">
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
                   Debug Studio Dashboard
                 </h1>
-                <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 font-semibold">
-                  <span className={`w-2 h-2 rounded-full ${sessions.length > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-                  {sessions.length > 0 ? 'Live' : 'Awaiting Traffic'}
+                <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 font-semibold shadow-2xs backdrop-blur-xs">
+                  <span className="relative flex h-2 w-2">
+                    {sessions.length > 0 && (
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    )}
+                    <span className={`relative inline-flex rounded-full h-2 w-2 ${sessions.length > 0 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                  </span>
+                  {sessions.length > 0 ? 'Live Tracer Active' : 'Awaiting Traffic'}
                 </span>
               </div>
-              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                Every run is recorded with complete function calls, variable state, and sub-expression evaluation.
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
+                Continuous execution capture • line-by-line variable state • AST sub-expression introspection.
               </p>
             </div>
+
             <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-xs">
-                <Radio className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
-                <span>Listener: <strong className="text-slate-900 dark:text-white">:{listenerPort}</strong></span>
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-white/[0.08] shadow-2xs hover:border-emerald-500/40 hover:scale-[1.02] transition-all duration-200 group">
+                <Server strokeWidth={2.2} className="w-3.5 h-3.5 text-emerald-500 group-hover:scale-110 transition-transform" />
+                <span className="text-slate-600 dark:text-slate-300">Port: <strong className="text-slate-900 dark:text-white font-mono">:{listenerPort}</strong></span>
               </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-xs">
-                <Cpu className="w-3.5 h-3.5 text-indigo-500" />
-                <span>AI: <strong className="text-indigo-600 dark:text-indigo-400">{aiHost}</strong></span>
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-white/[0.08] shadow-2xs hover:border-indigo-500/40 hover:scale-[1.02] transition-all duration-200 group">
+                <Bot strokeWidth={2.2} className="w-3.5 h-3.5 text-indigo-500 group-hover:scale-110 transition-transform" />
+                <span className="text-slate-600 dark:text-slate-300">AI: <strong className="text-indigo-600 dark:text-indigo-400 font-mono">{aiHost}</strong></span>
               </div>
             </div>
           </div>
 
-          {/* KPI cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5">
+          {/* Elevated KPI cards with top accent gradient line and hover lift */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 mt-6">
             {[
-              { icon: Terminal, label: 'Recorded Runs', value: sessions.length, iconCls: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' },
-              { icon: Zap, label: 'Avg Duration', value: avgDuration, suffix: ' ms', iconCls: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' },
-              { icon: Activity, label: 'Line Events', value: totalEvents, iconCls: 'bg-purple-500/10 text-purple-500 border-purple-500/20' },
-              { icon: Layers, label: 'Functions', value: functions.length, iconCls: 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20' },
+              { 
+                icon: History, 
+                label: 'Recorded Runs', 
+                value: sessions.length, 
+                subtitle: sessions.length === 1 ? '1 execution recorded' : `${sessions.length} executions recorded`,
+                gradient: 'from-blue-500 to-indigo-600',
+                iconBg: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20 group-hover:bg-indigo-500/20 group-hover:shadow-indigo-500/20',
+              },
+              { 
+                icon: Zap, 
+                label: 'Avg Duration', 
+                value: avgDuration, 
+                suffix: ' ms', 
+                subtitle: 'Sub-millisecond speed',
+                gradient: 'from-emerald-500 to-teal-600',
+                iconBg: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 group-hover:bg-emerald-500/20 group-hover:shadow-emerald-500/20',
+              },
+              { 
+                icon: GitCommitVertical, 
+                label: 'Line Events', 
+                value: totalEvents, 
+                subtitle: 'AST steps evaluated',
+                gradient: 'from-purple-500 to-fuchsia-600',
+                iconBg: 'bg-purple-500/10 text-purple-500 border-purple-500/20 group-hover:bg-purple-500/20 group-hover:shadow-purple-500/20',
+              },
+              { 
+                icon: Boxes, 
+                label: 'Functions', 
+                value: functions.length, 
+                subtitle: `${functions.length} callables discovered`,
+                gradient: 'from-cyan-500 to-sky-600',
+                iconBg: 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20 group-hover:bg-cyan-500/20 group-hover:shadow-cyan-500/20',
+              },
             ].map((kpi) => (
               <div
                 key={kpi.label}
-                className="p-3.5 rounded-xl bg-white/80 dark:bg-[#0c1220]/80 border border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between"
+                className="group relative overflow-hidden rounded-2xl bg-white dark:bg-[#0c1220] border border-slate-200/90 dark:border-white/[0.08] p-4 shadow-xs hover:shadow-lg hover:border-slate-300 dark:hover:border-white/[0.16] hover:-translate-y-1 transition-all duration-300 ease-out cursor-default"
               >
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400 font-semibold">{kpi.label}</div>
-                  <div className="text-xl font-bold font-mono mt-0.5">
-                    {kpi.value} {kpi.suffix && <span className="text-[10px] font-normal text-slate-400 font-sans">{kpi.suffix}</span>}
+                {/* Top Accent Gradient Line */}
+                <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${kpi.gradient} opacity-90 group-hover:h-1.5 transition-all duration-200`} />
+
+                <div className="flex items-start justify-between gap-3 mt-1">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
+                      {kpi.label}
+                    </div>
+                    <div className="text-2xl font-black font-mono mt-1 text-slate-900 dark:text-white tracking-tight">
+                      {kpi.value}
+                      {kpi.suffix && (
+                        <span className="text-xs font-semibold text-slate-400 font-sans ml-1">
+                          {kpi.suffix}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 font-medium">
+                      {kpi.subtitle}
+                    </div>
+                  </div>
+
+                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center border shadow-xs transition-all duration-300 group-hover:scale-105 ${kpi.iconBg}`}>
+                    <kpi.icon strokeWidth={2.2} className="w-5 h-5" />
                   </div>
                 </div>
-                <kpi.icon className={`w-5 h-5 p-1 rounded-lg border ${kpi.iconCls}`} />
               </div>
             ))}
           </div>
@@ -471,8 +553,77 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
           })}
 
           {filteredSessions.length === 0 && (
-            <div className="p-12 text-center text-xs text-slate-400 font-mono border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
-              No recorded executions yet. Run code with PyTracer, use the Playground sandbox, or run <span className="text-indigo-500 dark:text-indigo-400 font-semibold">pydebug run your_script.py</span>.
+            <div className="relative overflow-hidden rounded-3xl border border-slate-200/90 dark:border-white/[0.08] bg-white/80 dark:bg-[#0c1220]/80 p-8 shadow-sm text-center">
+              <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+
+              <div className="relative z-10 max-w-xl mx-auto space-y-2">
+                <div className="inline-flex p-3 rounded-2xl bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 shadow-xs animate-bounce duration-1000">
+                  <Sparkles className="w-6 h-6" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
+                  Ready to Trace Execution
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Every script run, MCP tool call, and FastAPI endpoint is captured automatically with line-by-line variables, AST sub-expressions, and live logs.
+                </p>
+              </div>
+
+              {/* 3 Interactive Quick-Start Cards */}
+              <div className="relative z-10 grid grid-cols-1 md:grid-cols-3 gap-3.5 mt-6 text-left">
+                {/* Card 1: Interactive Sandbox */}
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-white/[0.06] hover:border-indigo-500/50 hover:shadow-md transition-all duration-200 group flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-1.5">
+                      <FlaskConical className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                      <span>1. Interactive Sandbox</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal">
+                      Test any of the {functions.length} discovered workspace functions with custom arguments and view live traces.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => onSelectSession('', 'playground')}
+                    className="mt-3.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center justify-between shadow-xs transition-all cursor-pointer"
+                  >
+                    <span>Open Sandbox</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Card 2: MCP & FastAPI Auto-Capture */}
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-white/[0.06] hover:border-emerald-500/50 hover:shadow-md transition-all duration-200 group flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-emerald-600 dark:text-emerald-400 mb-1.5">
+                      <Radio className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                      <span>2. Zero-Config Hook</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal">
+                      Auto-intercept all MCP tool calls and HTTP endpoints in this workspace without touching code.
+                    </p>
+                  </div>
+                  <div className="mt-3.5 flex items-center justify-between p-2 rounded-xl bg-slate-100 dark:bg-slate-950 font-mono text-[11px] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-white/[0.06]">
+                    <code>pydebug install</code>
+                    <CopyButton text="pydebug install" />
+                  </div>
+                </div>
+
+                {/* Card 3: CLI Script Tracer */}
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-white/[0.06] hover:border-purple-500/50 hover:shadow-md transition-all duration-200 group flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-purple-600 dark:text-purple-400 mb-1.5">
+                      <Terminal className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                      <span>3. CLI Script Tracer</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal">
+                      Run any python script or pytest file with complete AST expression inspection.
+                    </p>
+                  </div>
+                  <div className="mt-3.5 flex items-center justify-between p-2 rounded-xl bg-slate-100 dark:bg-slate-950 font-mono text-[11px] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-white/[0.06]">
+                    <code>pydebug run main.py</code>
+                    <CopyButton text="pydebug run main.py" />
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -512,7 +663,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
                 return (
                   <div
                     key={`${func.file_path}-${func.name}`}
-                    className="p-4 rounded-xl bg-white/90 dark:bg-[#0c1220] border border-slate-200/80 dark:border-slate-800/80 hover:border-indigo-500/50 transition-all flex items-start justify-between gap-3 shadow-xs"
+                    className="p-4 rounded-2xl bg-white/90 dark:bg-[#0c1220] border border-slate-200/90 dark:border-white/[0.08] hover:border-indigo-500/50 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 flex items-start justify-between gap-3 shadow-2xs group"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -549,7 +700,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
                     <div className="flex flex-col shrink-0 items-end gap-1.5">
                       <button
                         onClick={() => onTryFunction?.(func)}
-                        className="px-3.5 py-2 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/25 flex items-center gap-1.5 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+                        className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/25 flex items-center gap-1.5 transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer"
                         title="Open this function in the Code Sandbox to edit arguments and run it live"
                       >
                         <SlidersHorizontal className="w-3.5 h-3.5" />
