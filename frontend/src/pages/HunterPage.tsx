@@ -19,7 +19,8 @@ import {
   Bot,
   RefreshCw,
   Lightbulb,
-  ShieldAlert
+  ShieldAlert,
+  Terminal
 } from 'lucide-react';
 import type { TraceSession, TraceEvent, AiExplanation, AIProviderConfig } from '../types';
 
@@ -36,7 +37,10 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
   const [currentIdx, setCurrentIdx] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1); // 0.5x, 1x, 2x, 4x
-  const [activeTab, setActiveTab] = useState<'locals' | 'ai' | 'delta' | 'stack' | 'stream'>('locals');
+  const [activeTab, setActiveTab] = useState<'locals' | 'ai' | 'delta' | 'stack' | 'stream' | 'logs'>('locals');
+  const [hunterLogQuery, setHunterLogQuery] = useState<string>('');
+  const [hunterLogLevel, setHunterLogLevel] = useState<'ALL' | 'INFO' | 'WARN' | 'ERROR' | 'STDOUT'>('ALL');
+  const [copiedHunterLogs, setCopiedHunterLogs] = useState<boolean>(false);
   const [copiedVar, setCopiedVar] = useState<string | null>(null);
   const [varSearchQuery, setVarSearchQuery] = useState<string>('');
   const [streamFilter, setStreamFilter] = useState<string>('');
@@ -265,6 +269,50 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
     navigator.clipboard.writeText(val);
     setCopiedVar(key);
     setTimeout(() => setCopiedVar(null), 1500);
+  };
+
+  const sessionLogs = session.logs || [];
+  const filteredSessionLogs = useMemo(() => {
+    return sessionLogs.filter((l) => {
+      if (hunterLogLevel === 'INFO' && l.level !== 'INFO') return false;
+      if (hunterLogLevel === 'WARN' && l.level !== 'WARNING' && l.level !== 'WARN') return false;
+      if (hunterLogLevel === 'ERROR' && l.level !== 'ERROR' && l.level !== 'CRITICAL') return false;
+      if (hunterLogLevel === 'STDOUT' && l.level !== 'STDOUT' && l.level !== 'STDERR') return false;
+      if (!hunterLogQuery.trim()) return true;
+      const q = hunterLogQuery.toLowerCase();
+      return (
+        l.message.toLowerCase().includes(q) ||
+        l.logger.toLowerCase().includes(q) ||
+        (l.file && l.file.toLowerCase().includes(q))
+      );
+    });
+  }, [sessionLogs, hunterLogLevel, hunterLogQuery]);
+
+  const copyHunterLogs = () => {
+    const text = sessionLogs.map(l => `[${l.level}] ${l.logger}: ${l.message}`).join('\n');
+    navigator.clipboard.writeText(text);
+    setCopiedHunterLogs(true);
+    setTimeout(() => setCopiedHunterLogs(false), 1500);
+  };
+
+  const jumpToLog = (log: { line?: number; timestamp: number }) => {
+    if (log.line) {
+      const idx = events.findIndex(e => e.line === log.line);
+      if (idx !== -1) {
+        setCurrentIdx(idx);
+        return;
+      }
+    }
+    let closestIdx = 0;
+    let minDiff = Infinity;
+    events.forEach((e, i) => {
+      const diff = Math.abs(e.timestamp - log.timestamp);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIdx = i;
+      }
+    });
+    setCurrentIdx(closestIdx);
   };
 
   const togglePin = (name: string) => {
@@ -689,6 +737,21 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
               </button>
 
               <button
+                onClick={() => setActiveTab('logs')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors ${
+                  activeTab === 'logs'
+                    ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white shadow-xs font-semibold'
+                    : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <Terminal className="w-3.5 h-3.5" />
+                <span>Logs ({sessionLogs.length})</span>
+                {sessionLogs.some(l => l.level === 'ERROR' || l.level === 'CRITICAL') && (
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                )}
+              </button>
+
+              <button
                 onClick={() => setActiveTab('stack')}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors ${
                   activeTab === 'stack'
@@ -969,6 +1032,114 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
                   No variable mutations occurred on this specific line
                 </div>
               )}
+            </div>
+          )}
+
+          {/* TAB: EXECUTION LOGS */}
+          {activeTab === 'logs' && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="p-2.5 border-b border-slate-200 dark:border-white/[0.08] bg-white/50 dark:bg-slate-900/30 flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                    <input
+                      type="text"
+                      value={hunterLogQuery}
+                      onChange={(e) => setHunterLogQuery(e.target.value)}
+                      placeholder="Search session logs..."
+                      className="w-full pl-8 pr-3 py-1.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.08] text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-mono"
+                    />
+                  </div>
+                  {sessionLogs.length > 0 && (
+                    <button
+                      onClick={copyHunterLogs}
+                      className="px-2 py-1.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 hover:text-slate-900 text-xs flex items-center gap-1 cursor-pointer shrink-0"
+                      title="Copy all logs"
+                    >
+                      {copiedHunterLogs ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedHunterLogs ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1 text-[11px] font-mono overflow-x-auto pb-0.5">
+                  {(['ALL', 'INFO', 'WARN', 'ERROR', 'STDOUT'] as const).map((lvl) => (
+                    <button
+                      key={lvl}
+                      onClick={() => setHunterLogLevel(lvl)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-all cursor-pointer ${
+                        hunterLogLevel === lvl
+                          ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white/[0.1] hover:border-slate-300'
+                      }`}
+                    >
+                      {lvl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-3 space-y-2 font-mono text-xs">
+                {filteredSessionLogs.length === 0 ? (
+                  <div className="h-48 flex flex-col items-center justify-center text-center p-6 text-slate-400 text-xs">
+                    <Terminal className="w-8 h-8 text-slate-300 dark:text-slate-700 mb-2 stroke-1" />
+                    <p>{sessionLogs.length === 0 ? 'No logs recorded in this session.' : 'No logs match search query.'}</p>
+                  </div>
+                ) : (
+                  filteredSessionLogs.map((log, idx) => {
+                    const isError = log.level === 'ERROR' || log.level === 'CRITICAL';
+                    const isWarn = log.level === 'WARNING' || log.level === 'WARN';
+                    const isStdout = log.level === 'STDOUT' || log.level === 'STDERR';
+
+                    const badgeCls = isError
+                      ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30'
+                      : isWarn
+                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                      : isStdout
+                      ? 'bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/30'
+                      : 'bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30';
+
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => jumpToLog(log)}
+                        className={`p-2.5 rounded-lg border transition-all cursor-pointer group hover:border-indigo-400 ${
+                          isError
+                            ? 'bg-rose-50/60 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/60'
+                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-white/[0.08]'
+                        }`}
+                        title="Click to jump to this point in timeline"
+                      >
+                        <div className="flex items-center justify-between mb-1.5 gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold border uppercase tracking-wide shrink-0 ${badgeCls}`}>
+                              {log.level}
+                            </span>
+                            <span className="font-semibold text-slate-700 dark:text-slate-300 truncate text-[11px]" title={log.logger}>
+                              {log.logger}
+                            </span>
+                          </div>
+                          {log.file && (
+                            <span className="text-[10px] text-slate-400 truncate shrink-0">
+                              {log.file}:{log.line}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 whitespace-pre-wrap break-words select-text">
+                          {log.message}
+                        </div>
+
+                        {log.exc_info && (
+                          <pre className="mt-1.5 p-2 rounded bg-slate-950 text-rose-300 text-[10px] overflow-x-auto whitespace-pre-wrap">
+                            {log.exc_info}
+                          </pre>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           )}
 

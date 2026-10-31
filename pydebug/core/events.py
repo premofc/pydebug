@@ -11,6 +11,19 @@ from typing import Any
 
 
 @dataclass
+class LogEntry:
+    """Represents an application log or console output captured during execution."""
+    timestamp: float
+    level: str             # "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL" | "STDOUT" | "STDERR"
+    logger: str            # Logger name or 'stdout'/'stderr'
+    message: str           # Formatted message string
+    file: str = ""
+    line: int = 0
+    func: str = ""
+    exc_info: str | None = None
+
+
+@dataclass
 class SubExpression:
     """Represents a fine-grained sub-expression evaluated during a code line (Birdseye-style)."""
     text: str
@@ -49,6 +62,7 @@ class TraceSession:
     files: list[str] = field(default_factory=list)
     file_sources: dict[int, list[str]] = field(default_factory=dict)
     events: list[TraceEvent] = field(default_factory=list)
+    logs: list[dict[str, Any]] = field(default_factory=list)
     stats: dict[str, Any] = field(default_factory=dict)
     _file_idx_cache: dict[str, int] = field(default_factory=dict, repr=False)
     _last_vars_by_func: dict[str, dict[str, str]] = field(default_factory=dict, repr=False)
@@ -132,6 +146,7 @@ class TraceSession:
                 round((self.events[-1].timestamp - self.events[0].timestamp) * 1000, 2)
                 if len(self.events) > 1 else 0.0
             ),
+            "logs_count": len(self.logs),
         }
 
     @classmethod
@@ -155,6 +170,7 @@ class TraceSession:
             files=data.get("files", []),
             file_sources=sources,
             events=events,
+            logs=list(data.get("logs", [])),
             stats=data.get("stats", {}),
         )
 
@@ -167,6 +183,7 @@ class TraceSession:
             "files": list(self.files),
             "file_sources": dict(self.file_sources),
             "events": [asdict(e) for e in list(self.events)],
+            "logs": list(self.logs),
             "stats": dict(self.stats),
         }
 

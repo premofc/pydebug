@@ -26,7 +26,7 @@ if sys.platform == "win32":
         pass
 
 from pydebug.core.events import TraceSession
-from pydebug.core.tracer import PyTracer, safe_repr
+from pydebug.core.tracer import PyTracer, safe_repr, capture_logs
 from pydebug.core.ast_spy import clear_active_expressions, inspect_expressions
 from pydebug.server.ai import get_ai_manager
 
@@ -571,12 +571,13 @@ class PyDebugHandler(BaseHTTPRequestHandler):
 
             try:
                 call_kwargs = kwargs if isinstance(kwargs, dict) else {}
-                if inspect.iscoroutinefunction(exec_func):
-                    ret_val = asyncio.run(exec_func(**call_kwargs))
-                else:
-                    ret_val = exec_func(**call_kwargs)
-                    if inspect.iscoroutine(ret_val):
-                        ret_val = asyncio.run(ret_val)
+                with capture_logs(session):
+                    if inspect.iscoroutinefunction(exec_func):
+                        ret_val = asyncio.run(exec_func(**call_kwargs))
+                    else:
+                        ret_val = exec_func(**call_kwargs)
+                        if inspect.iscoroutine(ret_val):
+                            ret_val = asyncio.run(ret_val)
             except Exception as exc:
                 error_type = type(exc).__name__
                 error_msg = str(exc) or error_type

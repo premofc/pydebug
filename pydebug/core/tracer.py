@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import collections.abc as cabc
 import functools
 import inspect
@@ -228,6 +229,123 @@ class PyTracer:
         return self.session
 
 
+class SessionLogHandler(logging.Handler):
+    """Logging handler that appends formatted log records to a TraceSession."""
+
+    def __init__(self, session: TraceSession) -> None:
+        super().__init__()
+        self.session = session
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if record.name.startswith("pydebug"):
+            return
+        try:
+            msg = record.getMessage()
+            exc_text = None
+            if record.exc_info:
+                exc_text = logging.Formatter().formatException(record.exc_info)
+            self.session.logs.append({
+                "timestamp": record.created,
+                "level": record.levelname,
+                "logger": record.name,
+                "message": msg,
+                "file": record.filename,
+                "line": record.lineno,
+                "func": record.funcName,
+                "exc_info": exc_text,
+            })
+        except Exception:
+            pass
+
+
+class StreamTee:
+    """Tee that writes to original stream while capturing lines into session logs."""
+
+    def __init__(self, original_stream: Any, session: TraceSession, level: str = "STDOUT") -> None:
+        self.orig = original_stream
+        self.session = session
+        self.level = level
+        self._buffer = ""
+
+    def write(self, s: str) -> int:
+        try:
+            self.orig.write(s)
+        except Exception:
+            pass
+        self._buffer += str(s)
+        while "\n" in self._buffer:
+            line, self._buffer = self._buffer.split("\n", 1)
+            clean = line.rstrip("\r\n")
+            if clean:
+                self.session.logs.append({
+                    "timestamp": time.time(),
+                    "level": self.level,
+                    "logger": self.level.lower(),
+                    "message": clean,
+                    "file": "",
+                    "line": 0,
+                    "func": "",
+                    "exc_info": None,
+                })
+        return len(s)
+
+    def flush(self) -> None:
+        try:
+            self.orig.flush()
+        except Exception:
+            pass
+        clean = self._buffer.strip()
+        if clean:
+            self.session.logs.append({
+                "timestamp": time.time(),
+                "level": self.level,
+                "logger": self.level.lower(),
+                "message": clean,
+                "file": "",
+                "line": 0,
+                "func": "",
+                "exc_info": None,
+            })
+            self._buffer = ""
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.orig, name)
+
+
+@contextmanager
+def capture_logs(session: TraceSession, capture_stdout: bool = True, min_level: int = logging.DEBUG) -> Generator[None, None, None]:
+    """Captures all logging.getLogger() records and stdout/stderr during a code block."""
+    handler = SessionLogHandler(session)
+    handler.setLevel(min_level)
+    root_logger = logging.getLogger()
+    prev_level = root_logger.level
+    if root_logger.level > min_level or root_logger.level == 0:
+        root_logger.setLevel(min_level)
+    root_logger.addHandler(handler)
+
+    orig_stdout = sys.stdout
+    orig_stderr = sys.stderr
+    stdout_tee = StreamTee(orig_stdout, session, level="STDOUT") if capture_stdout else None
+    stderr_tee = StreamTee(orig_stderr, session, level="STDERR") if capture_stdout else None
+
+    if stdout_tee:
+        sys.stdout = stdout_tee  # type: ignore
+    if stderr_tee:
+        sys.stderr = stderr_tee  # type: ignore
+
+    try:
+        yield
+    finally:
+        if stdout_tee:
+            stdout_tee.flush()
+            sys.stdout = orig_stdout
+        if stderr_tee:
+            stderr_tee.flush()
+            sys.stderr = orig_stderr
+        root_logger.removeHandler(handler)
+        root_logger.setLevel(prev_level)
+
+
 @contextmanager
 def capture(
     title: str = "Trace Session",
@@ -236,10 +354,11 @@ def capture(
     """Context manager to trace execution within a code block."""
     tracer = PyTracer(session=TraceSession(title=title), include_paths=include_paths)
     tracer.start()
-    try:
-        yield tracer.session
-    finally:
-        tracer.stop()
+    with capture_logs(tracer.session):
+        try:
+            yield tracer.session
+        finally:
+            tracer.stop()
 
 
 def trace(
@@ -264,10 +383,11 @@ def trace(
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 tracer = PyTracer(session=TraceSession(title=sess_title), include_paths=[fn_file])
                 tracer.start()
-                try:
-                    return await target_fn(*args, **kwargs)
-                finally:
-                    sess = tracer.stop()
+                with capture_logs(tracer.session):
+                    try:
+                        return await target_fn(*args, **kwargs)
+                    finally:
+                        sess = tracer.stop()
                     try:
                         sess.compute_stats()
                         from pydebug.server.app import get_session_manager
@@ -287,10 +407,11 @@ def trace(
                     return target_fn(*args, **kwargs)
                 tracer = PyTracer(session=TraceSession(title=sess_title), include_paths=[fn_file])
                 tracer.start()
-                try:
-                    return target_fn(*args, **kwargs)
-                finally:
-                    sess = tracer.stop()
+                with capture_logs(tracer.session):
+                    try:
+                        return target_fn(*args, **kwargs)
+                    finally:
+                        sess = tracer.stop()
                     try:
                         sess.compute_stats()
                         from pydebug.server.app import get_session_manager

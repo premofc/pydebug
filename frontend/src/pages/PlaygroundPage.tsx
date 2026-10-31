@@ -18,7 +18,7 @@ import {
   Clock,
   Terminal,
 } from 'lucide-react';
-import type { TraceSession, FunctionSignature, TestCase } from '../types';
+import type { TraceSession, FunctionSignature, TestCase, LogEntry } from '../types';
 
 interface PlaygroundPageProps {
   session: TraceSession;
@@ -79,6 +79,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
     success: boolean;
     return_val: string;
     events_count: number;
+    logs: LogEntry[];
     error: string | null;
     error_type?: string;
     error_message?: string;
@@ -87,6 +88,10 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
     error_line?: number;
     duration_ms?: number;
   } | null>(null);
+  const [outputTab, setOutputTab] = useState<'result' | 'logs'>('result');
+  const [logSearchQuery, setLogSearchQuery] = useState<string>('');
+  const [logLevelFilter, setLogLevelFilter] = useState<'ALL' | 'INFO' | 'WARN' | 'ERROR' | 'STDOUT'>('ALL');
+  const [copiedLogs, setCopiedLogs] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
   const [testCases, setTestCases] = useState<TestCase[]>([]);
 
@@ -260,6 +265,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
           success: data.success,
           return_val: data.return_val || '',
           events_count: data.session?.events?.length || 0,
+          logs: data.session?.logs || [],
           error: data.error,
           error_type: data.error_type,
           error_message: data.error_message,
@@ -274,6 +280,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
           success: false,
           return_val: '',
           events_count: 0,
+          logs: [],
           error: err.error || 'Server error during execution',
           error_type: err.error_type || 'ServerError',
           error_message: err.error_message || err.error,
@@ -286,6 +293,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
         success: false,
         return_val: '',
         events_count: 0,
+        logs: [],
         error: err.message,
         error_type: 'NetworkError',
         duration_ms: 0.1,
@@ -293,6 +301,30 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
     } finally {
       setIsRunning(false);
     }
+  };
+
+  const logs = lastResult?.logs || [];
+  const filteredLogs = useMemo(() => {
+    return logs.filter((l) => {
+      if (logLevelFilter === 'INFO' && l.level !== 'INFO') return false;
+      if (logLevelFilter === 'WARN' && l.level !== 'WARNING' && l.level !== 'WARN') return false;
+      if (logLevelFilter === 'ERROR' && l.level !== 'ERROR' && l.level !== 'CRITICAL') return false;
+      if (logLevelFilter === 'STDOUT' && l.level !== 'STDOUT' && l.level !== 'STDERR') return false;
+      if (!logSearchQuery.trim()) return true;
+      const q = logSearchQuery.toLowerCase();
+      return (
+        l.message.toLowerCase().includes(q) ||
+        l.logger.toLowerCase().includes(q) ||
+        (l.file && l.file.toLowerCase().includes(q))
+      );
+    });
+  }, [logs, logLevelFilter, logSearchQuery]);
+
+  const copyAllLogs = () => {
+    const text = logs.map(l => `[${l.level}] ${l.logger}: ${l.message}`).join('\n');
+    navigator.clipboard.writeText(text);
+    setCopiedLogs(true);
+    setTimeout(() => setCopiedLogs(false), 1500);
   };
 
   const copyResult = () => {
@@ -488,13 +520,37 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
           </div>
         </div>
 
-        {/* Column 3: Live Output & Exception Inspector */}
-        <div className="w-96 flex flex-col bg-slate-50/50 dark:bg-[#050811] overflow-hidden shrink-0">
-          <div className="p-4 border-b border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#090e1a] flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-              <Activity className="w-3.5 h-3.5 text-indigo-500" />
-              Live Execution Output
-            </span>
+        {/* Column 3: Live Output & Logs Inspector */}
+        <div className="w-96 lg:w-[440px] flex flex-col bg-slate-50/50 dark:bg-[#050811] overflow-hidden shrink-0 border-l border-slate-200 dark:border-white/[0.08]">
+          <div className="p-3 border-b border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#090e1a] flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200 dark:border-white/[0.08] text-xs font-semibold">
+              <button
+                onClick={() => setOutputTab('result')}
+                className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+                  outputTab === 'result'
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <Activity className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Result</span>
+              </button>
+              <button
+                onClick={() => setOutputTab('logs')}
+                className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+                  outputTab === 'logs'
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <Terminal className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Logs ({logs.length})</span>
+                {logs.some(l => l.level === 'ERROR' || l.level === 'CRITICAL') && (
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                )}
+              </button>
+            </div>
+
             {lastResult?.duration_ms && (
               <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1">
                 <Clock className="w-3 h-3" />
@@ -503,7 +559,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
             )}
           </div>
 
-          <div className="flex-1 p-4 overflow-y-auto space-y-4">
+          <div className="flex-1 flex flex-col overflow-hidden">
             {!lastResult && !isRunning && (
               <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
                 <FlaskConical className="w-10 h-10 stroke-1 text-slate-300 dark:text-slate-700 mb-2" />
@@ -518,12 +574,12 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
               <div className="h-full flex flex-col items-center justify-center text-center p-6 text-indigo-500">
                 <Activity className="w-8 h-8 animate-spin mb-3" />
                 <p className="text-xs font-medium text-slate-700 dark:text-slate-300">Executing with PyTracer...</p>
-                <p className="text-[11px] text-slate-400 mt-1">Recording AST events and call depth in real time</p>
+                <p className="text-[11px] text-slate-400 mt-1">Recording AST events, sub-expressions, and live logs</p>
               </div>
             )}
 
-            {lastResult && (
-              <>
+            {lastResult && outputTab === 'result' && (
+              <div className="flex-1 p-4 overflow-y-auto space-y-4">
                 {/* Result Status Card */}
                 {lastResult.success ? (
                   <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-xs">
@@ -533,6 +589,8 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                     </div>
                     <div className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80 mt-1 flex items-center gap-2">
                       <span>{lastResult.events_count} events recorded</span>
+                      <span>•</span>
+                      <span>{lastResult.logs.length} logs</span>
                       <span>•</span>
                       <span>{lastResult.duration_ms?.toFixed(1)} ms</span>
                     </div>
@@ -556,7 +614,6 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                       </div>
                     )}
 
-                    {/* Big Action Button to Jump directly to Timeline */}
                     <button
                       onClick={onNavigateToHunter}
                       className="mt-3 w-full py-2 px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
@@ -604,6 +661,23 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                   </div>
                 )}
 
+                {/* Quick Logs Peek if logs exist */}
+                {lastResult.logs.length > 0 && (
+                  <div className="p-3 rounded-xl bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200 dark:border-white/[0.08] flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs">
+                      <Terminal className="w-4 h-4 text-indigo-500" />
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">{lastResult.logs.length} logs captured</span>
+                    </div>
+                    <button
+                      onClick={() => setOutputTab('logs')}
+                      className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer flex items-center gap-1"
+                    >
+                      <span>View Logs</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+
                 {/* Inspect in Timeline Button */}
                 {lastResult.events_count > 0 && (
                   <button
@@ -614,7 +688,115 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 )}
-              </>
+              </div>
+            )}
+
+            {lastResult && outputTab === 'logs' && (
+              <div className="flex-1 flex flex-col overflow-hidden">
+                {/* Search & Level Filters Toolbar */}
+                <div className="p-2.5 border-b border-slate-200 dark:border-white/[0.08] bg-slate-100/50 dark:bg-[#090e1a]/60 flex flex-col gap-2 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                      <input
+                        type="text"
+                        value={logSearchQuery}
+                        onChange={(e) => setLogSearchQuery(e.target.value)}
+                        placeholder="Search logs by message or logger..."
+                        className="w-full pl-8 pr-2.5 py-1.5 rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.1] text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-mono"
+                      />
+                    </div>
+                    {logs.length > 0 && (
+                      <button
+                        onClick={copyAllLogs}
+                        className="px-2 py-1.5 rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.1] text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white text-xs flex items-center gap-1 cursor-pointer shrink-0"
+                        title="Copy all logs"
+                      >
+                        {copiedLogs ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedLogs ? 'Copied' : 'Copy'}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Level Pills */}
+                  <div className="flex items-center gap-1 text-[11px] font-mono overflow-x-auto pb-0.5">
+                    {(['ALL', 'INFO', 'WARN', 'ERROR', 'STDOUT'] as const).map((lvl) => (
+                      <button
+                        key={lvl}
+                        onClick={() => setLogLevelFilter(lvl)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-all cursor-pointer ${
+                          logLevelFilter === lvl
+                            ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white/[0.1] hover:border-slate-300'
+                        }`}
+                      >
+                        {lvl}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Log Entries List */}
+                <div className="flex-1 overflow-y-auto p-3 space-y-2 font-mono text-xs">
+                  {filteredLogs.length === 0 ? (
+                    <div className="h-48 flex flex-col items-center justify-center text-center p-6 text-slate-400 text-xs">
+                      <Terminal className="w-8 h-8 text-slate-300 dark:text-slate-700 mb-2 stroke-1" />
+                      <p>{logs.length === 0 ? 'No logs emitted during this execution.' : 'No logs match current filter.'}</p>
+                    </div>
+                  ) : (
+                    filteredLogs.map((log, idx) => {
+                      const isError = log.level === 'ERROR' || log.level === 'CRITICAL';
+                      const isWarn = log.level === 'WARNING' || log.level === 'WARN';
+                      const isStdout = log.level === 'STDOUT' || log.level === 'STDERR';
+
+                      const badgeCls = isError
+                        ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30'
+                        : isWarn
+                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                        : isStdout
+                        ? 'bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/30'
+                        : 'bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30';
+
+                      return (
+                        <div
+                          key={idx}
+                          className={`p-2.5 rounded-lg border transition-all ${
+                            isError
+                              ? 'bg-rose-50/60 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/60'
+                              : 'bg-white dark:bg-slate-900/90 border-slate-200 dark:border-white/[0.08]'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1.5 gap-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold border uppercase tracking-wide shrink-0 ${badgeCls}`}>
+                                {log.level}
+                              </span>
+                              <span className="font-semibold text-slate-700 dark:text-slate-300 truncate text-[11px]" title={log.logger}>
+                                {log.logger}
+                              </span>
+                            </div>
+                            {log.file && (
+                              <span className="text-[10px] text-slate-400 truncate shrink-0">
+                                {log.file}:{log.line}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 whitespace-pre-wrap break-words select-text">
+                            {log.message}
+                          </div>
+
+                          {log.exc_info && (
+                            <pre className="mt-1.5 p-2 rounded bg-slate-950 text-rose-300 text-[10px] overflow-x-auto whitespace-pre-wrap">
+                              {log.exc_info}
+                            </pre>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
             )}
           </div>
         </div>

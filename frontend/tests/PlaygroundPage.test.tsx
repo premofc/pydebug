@@ -275,4 +275,83 @@ describe('PlaygroundPage Component', () => {
       expect(screen.getByText('greeting()')).toBeInTheDocument();
     });
   });
+
+  it('displays console logs tab with execution logs and filter controls', async () => {
+    const sessionWithLogs: TraceSession = {
+      ...dummySession,
+      logs: [
+        {
+          timestamp: 1700000000,
+          level: 'INFO',
+          logger: 'app.service',
+          message: 'Starting tax calculation',
+        },
+        {
+          timestamp: 1700000001,
+          level: 'STDOUT',
+          logger: 'stdout',
+          message: 'Tax rate applied: 0.15',
+        },
+        {
+          timestamp: 1700000002,
+          level: 'ERROR',
+          logger: 'app.service',
+          message: 'Failed to record audit trail',
+        },
+      ],
+    };
+
+    global.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url === '/api/functions') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(mockDiscoveredFunctions),
+        });
+      }
+      if (url === '/api/execute-function' && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: true,
+              result: 15.0,
+              duration_ms: 12.5,
+              session: sessionWithLogs,
+            }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+
+    render(
+      <PlaygroundPage
+        session={dummySession}
+        onSessionUpdated={vi.fn()}
+        onNavigateToHunter={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/calculate_tax/).length).toBeGreaterThanOrEqual(1);
+    });
+    fireEvent.click(screen.getAllByText(/calculate_tax/)[0]);
+
+    const executeBtn = screen.getByText('Run Live Execution');
+    fireEvent.click(executeBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Logs \(3\)/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText(/Logs \(3\)/i));
+
+    expect(screen.getByText('Starting tax calculation')).toBeInTheDocument();
+    expect(screen.getByText('Tax rate applied: 0.15')).toBeInTheDocument();
+    expect(screen.getByText('Failed to record audit trail')).toBeInTheDocument();
+
+    const searchInput = screen.getByPlaceholderText(/Search logs by message or logger/i);
+    fireEvent.change(searchInput, { target: { value: 'audit' } });
+    expect(screen.getByText('Failed to record audit trail')).toBeInTheDocument();
+    expect(screen.queryByText('Starting tax calculation')).not.toBeInTheDocument();
+  });
 });

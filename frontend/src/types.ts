@@ -31,6 +31,17 @@ export interface TraceEvent {
   expressions?: SubExpression[];
 }
 
+export interface LogEntry {
+  timestamp: number;
+  level: 'DEBUG' | 'INFO' | 'WARNING' | 'WARN' | 'ERROR' | 'CRITICAL' | 'STDOUT' | 'STDERR' | (string & {});
+  logger: string;
+  message: string;
+  file?: string;
+  line?: number;
+  func?: string;
+  exc_info?: string | null;
+}
+
 export interface TraceSession {
   id: string;
   title: string;
@@ -38,6 +49,7 @@ export interface TraceSession {
   files: string[];
   file_sources: Record<number, string[]>;
   events: TraceEvent[];
+  logs?: LogEntry[];
   stats: {
     total_events: number;
     files_count: number;

@@ -198,3 +198,87 @@ class TestTraceAndSpyDecorators:
 
         res = verify_policy_tool("POL-123")
         assert res == "verified_POL-123"
+
+
+class TestLogCapture:
+    def test_session_log_handler(self):
+        import logging
+        from pydebug.core.events import TraceSession
+        from pydebug.core.tracer import SessionLogHandler
+
+        session = TraceSession(id="test-log-1", title="Log Test")
+        handler = SessionLogHandler(session)
+        logger = logging.getLogger("test_component")
+        logger.setLevel(logging.DEBUG)
+        logger.addHandler(handler)
+
+        try:
+            logger.info("Informational message")
+            logger.warning("Warning message with value %d", 42)
+            logger.error("Error occurred")
+        finally:
+            logger.removeHandler(handler)
+
+        assert len(session.logs) == 3
+        assert session.logs[0]["level"] == "INFO"
+        assert session.logs[0]["message"] == "Informational message"
+        assert session.logs[0]["logger"] == "test_component"
+
+        assert "WARN" in session.logs[1]["level"]
+        assert "42" in session.logs[1]["message"]
+
+        assert session.logs[2]["level"] == "ERROR"
+        assert session.logs[2]["message"] == "Error occurred"
+
+    def test_stream_tee(self):
+        import io
+        from pydebug.core.events import TraceSession
+        from pydebug.core.tracer import StreamTee
+
+        session = TraceSession(id="test-tee-1", title="Tee Test")
+        mock_orig = io.StringIO()
+        tee = StreamTee(mock_orig, session, level="STDOUT")
+
+        tee.write("Hello stdout line 1\n")
+        tee.write("Partial line...")
+        tee.write(" completed\n")
+        tee.flush()
+
+        # Check original stream got all content
+        assert "Hello stdout line 1\nPartial line... completed\n" in mock_orig.getvalue()
+
+        # Check session logs recorded the lines
+        assert len(session.logs) == 2
+        assert session.logs[0]["level"] == "STDOUT"
+        assert session.logs[0]["message"] == "Hello stdout line 1"
+        assert session.logs[1]["message"] == "Partial line... completed"
+
+    def test_capture_logs_context_manager(self):
+        import logging
+        from pydebug.core.events import TraceSession
+        from pydebug.core.tracer import capture_logs
+
+        session = TraceSession(id="test-ctx-1", title="Ctx Test")
+        with capture_logs(session, capture_stdout=True, min_level=logging.DEBUG):
+            print("Standard print message")
+            logging.getLogger("app.service").info("App service started")
+            logging.getLogger("pydebug.internal").info("This internal log should be skipped")
+
+        messages = [l["message"] for l in session.logs]
+        assert "Standard print message" in messages
+        assert "App service started" in messages
+        assert "This internal log should be skipped" not in messages
+
+    def test_capture_context_captures_logs_automatically(self):
+        import logging
+        from pydebug.core.tracer import capture
+
+        with capture(title="Auto Log Capture") as session:
+            print("Printed inside capture")
+            logging.getLogger("worker").warning("Worker warning")
+
+        assert len(session.logs) >= 2
+        messages = [l["message"] for l in session.logs]
+        assert "Printed inside capture" in messages
+        assert "Worker warning" in messages
+
