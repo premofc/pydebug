@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import urllib.error
 import pytest
 
-from pydebug.server.ai import AIProviderConfig, AIManager, get_ai_manager
+from pydebug.server.ai import AIProviderConfig, AIManager, get_ai_manager, _extract_json_or_text
 
 
 class TestAIProviderConfig:
@@ -169,3 +169,65 @@ class TestAIManager:
         assert res["cached"] is False
         assert "Line 99 in faulty_line()" in res["explanation"]
         assert "timed out" in res["suggestion"].lower() or "ollama" in res["suggestion"].lower()
+
+
+    def test_extract_json_or_text_markdown_fence(self):
+        markdown_json = """Here is the response:
+```json
+{
+  "explanation": "Condition evaluated to True",
+  "suggestion": "Handle else branch"
+}
+```
+Done!"""
+        parsed = _extract_json_or_text(markdown_json)
+        assert parsed["explanation"] == "Condition evaluated to True"
+        assert parsed["suggestion"] == "Handle else branch"
+
+    def test_extract_json_or_text_plain_text_fallback(self):
+        plain = """This line assigns a default policy limit.
+Consider adding a validation check before setting it."""
+        parsed = _extract_json_or_text(plain)
+        assert "This line assigns a default policy limit." in parsed["explanation"]
+        assert "Consider adding a validation check" in parsed["suggestion"]
+
+    @patch("urllib.request.urlopen")
+    def test_chat_ollama(self, mock_urlopen):
+        mgr = AIManager()
+        mgr.config.provider = "ollama"
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps({
+            "message": {
+                "role": "assistant",
+                "content": "This line checks whether `policy_id > 0`.",
+            }
+        }).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = mock_resp
+
+        res = mgr.chat(
+            query="What does this line do?",
+            func="validate_policy",
+            line=42,
+            src="if policy_id > 0:",
+            vars_dict={"policy_id": 5},
+            prompt_type="custom",
+        )
+        assert res["provider"] == "ollama"
+        assert "checks whether `policy_id > 0`" in res["response"]
+
+    @patch("urllib.request.urlopen")
+    def test_chat_error_fallback(self, mock_urlopen):
+        mgr = AIManager()
+        mgr.config.provider = "ollama"
+        mock_urlopen.side_effect = TimeoutError("Connection timed out")
+
+        res = mgr.chat(
+            query="Explain this line",
+            func="calc",
+            line=10,
+            src="x = 1",
+            prompt_type="explain",
+        )
+        assert "Query Error" in res["response"]
+        assert "error" in res

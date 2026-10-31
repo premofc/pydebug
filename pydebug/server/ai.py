@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -66,6 +67,47 @@ class AIProviderConfig:
             "has_api_key": bool(self.api_key.strip()),
             "api_key_masked": f"{self.api_key[:4]}...{self.api_key[-3:]}" if len(self.api_key) > 7 else ("***" if self.api_key else ""),
         }
+
+
+def _extract_json_or_text(raw_text: str) -> dict[str, str]:
+    """Resiliently extracts JSON {explanation, suggestion} or falls back cleanly."""
+    raw_text = raw_text.strip()
+    if "```" in raw_text:
+        match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group(1))
+                if isinstance(data, dict):
+                    return {k: str(v) for k, v in data.items()}
+            except Exception:
+                pass
+
+    try:
+        data = json.loads(raw_text)
+        if isinstance(data, dict):
+            return {k: str(v) for k, v in data.items()}
+    except Exception:
+        pass
+
+    match = re.search(r"(\{.*\})", raw_text, re.DOTALL)
+    if match:
+        try:
+            data = json.loads(match.group(1))
+            if isinstance(data, dict):
+                return {k: str(v) for k, v in data.items()}
+        except Exception:
+            pass
+
+    lines = [ln.strip() for ln in raw_text.splitlines() if ln.strip()]
+    if len(lines) >= 2:
+        return {
+            "explanation": lines[0],
+            "suggestion": " ".join(lines[1:]),
+        }
+    return {
+        "explanation": raw_text or "No explanation returned by AI.",
+        "suggestion": "Review execution trace step.",
+    }
 
 
 class AIManager:
@@ -274,6 +316,35 @@ class AIManager:
             f"{k}: {v.get('old')} -> {v.get('new')}" for k, v in diffs_dict.items()
         )
 
+        if prompt_type == "alteration":
+            instruction = (
+                "In 2 clear, concise sentences:\n"
+                "1. Suggest a concrete code refactoring or bug fix for this line.\n"
+                "2. Explain why this alteration makes the code safer or more Pythonic.\n"
+                "Respond ONLY with valid JSON having the keys 'explanation' and 'suggestion'."
+            )
+        elif prompt_type == "edge_cases":
+            instruction = (
+                "In 2 clear, concise sentences:\n"
+                "1. Audit the current variable values and identify any potential edge cases or failure modes (e.g. NoneType, empty collections, boundary conditions).\n"
+                "2. Suggest an assertion, guard condition, or defensive check to prevent runtime crashes.\n"
+                "Respond ONLY with valid JSON having the keys 'explanation' and 'suggestion'."
+            )
+        elif prompt_type == "rca":
+            instruction = (
+                "In 2 clear, concise sentences:\n"
+                "1. Diagnose the root cause of any exception, unexpected state, or flaw on this line.\n"
+                "2. State the exact recommended fix to resolve the root cause.\n"
+                "Respond ONLY with valid JSON having the keys 'explanation' and 'suggestion'."
+            )
+        else:
+            instruction = (
+                "In 2 clear, concise sentences:\n"
+                "1. Explain what this line does right now with these exact runtime variable values and what branch was taken.\n"
+                "2. Give one practical tip, edge case, or code alteration suggestion.\n"
+                "Respond ONLY with valid JSON having the keys 'explanation' and 'suggestion'."
+            )
+
         prompt = f"""You are an expert Python debugger and execution engine assistant.
 Function: {func}()
 Current Line {line}: {src}
@@ -281,18 +352,14 @@ Active variables in scope: {json.dumps(vars_dict)}
 Line variable mutations: {diff_summary or 'None'}
 Evaluated AST sub-expressions: {expr_summary or 'None'}
 
-In 2 clear, concise sentences:
-1. Explain what this line does right now with these exact runtime variable values and what branch was taken.
-2. Give one practical tip, edge case, or code alteration suggestion.
-
-Respond ONLY with valid JSON having the keys 'explanation' and 'suggestion'."""
+{instruction}"""
 
         try:
             if self.config.provider == "ollama":
                 result = self._call_ollama(prompt, line, src)
             else:
                 result = self._call_openai_compatible(prompt, line, src)
-            
+
             result["provider"] = self.config.provider
             result["model"] = self.config.model
             result["cached"] = False
@@ -307,13 +374,94 @@ Respond ONLY with valid JSON having the keys 'explanation' and 'suggestion'."""
                 "cached": False,
             }
 
+    def chat(
+        self,
+        query: str,
+        func: str = "unknown",
+        line: int = 0,
+        src: str = "",
+        vars_dict: dict[str, Any] | None = None,
+        diffs_dict: dict[str, Any] | None = None,
+        expressions: list[dict[str, Any]] | None = None,
+        history: list[dict[str, str]] | None = None,
+        prompt_type: str = "custom",
+    ) -> dict[str, Any]:
+        """Interactive conversational AI Co-Pilot query with full execution context."""
+        vars_dict = vars_dict or {}
+        diffs_dict = diffs_dict or {}
+        expressions = expressions or []
+        history = history or []
+
+        expr_summary = ", ".join(f"{e.get('text')} = {e.get('val')}" for e in expressions[:8])
+        diff_summary = ", ".join(
+            f"{k}: {v.get('old')} -> {v.get('new')}" for k, v in diffs_dict.items()
+        )
+
+        context_block = f"""[Execution Context]
+Function: {func}()
+Line {line}: {src}
+Active Variables in Scope: {json.dumps(vars_dict)}
+Line Variable Mutations: {diff_summary or 'None'}
+AST Sub-expressions: {expr_summary or 'None'}"""
+
+        if prompt_type == "explain":
+            user_msg = f"Explain in detail what happened when line {line} executed with the current variable values and which branch was taken."
+        elif prompt_type == "alteration":
+            user_msg = f"Suggest a cleaner, safer, or more idiomatic Python code fix for line {line} in {func}(). Provide the before/after code snippet."
+        elif prompt_type == "edge_cases":
+            user_msg = f"Audit line {line} for edge cases, potential exceptions, NoneType errors, or unexpected values. Suggest defensive checks."
+        elif prompt_type == "rca":
+            user_msg = f"Perform root cause analysis on this execution step in {func}(). Diagnose what failed or could fail and how to fix it."
+        else:
+            user_msg = query.strip() or f"Analyze line {line}: {src}"
+
+        system_prompt = (
+            "You are PyDebug AI Co-Pilot, an expert Python debugging and code execution assistant.\n"
+            "Help the developer understand code execution, diagnose bugs, evaluate variable state, and improve code.\n"
+            "Always be clear, precise, and practical. Use Markdown with code fences (```python ... ```) when providing code.\n"
+            f"{context_block}"
+        )
+
+        messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+        for item in history[-6:]:
+            role = item.get("role", "user")
+            content = item.get("content", "")
+            if role in ("user", "assistant") and content:
+                messages.append({"role": role, "content": content})
+
+        messages.append({"role": "user", "content": user_msg})
+
+        try:
+            if self.config.provider == "ollama":
+                reply = self._call_ollama_chat(messages)
+            else:
+                reply = self._call_openai_chat(messages)
+
+            return {
+                "response": reply,
+                "provider": self.config.provider,
+                "model": self.config.model,
+                "timestamp": time.time(),
+            }
+        except Exception as exc:
+            return {
+                "response": (
+                    f"⚠️ **{self.config.provider.title()} Query Error**: {exc}\n\n"
+                    "Please verify your AI settings in **AI Configuration** (Endpoint URL, Model name, or API Key)."
+                ),
+                "provider": self.config.provider,
+                "model": self.config.model,
+                "timestamp": time.time(),
+                "error": str(exc),
+            }
+
     def _call_ollama(self, prompt: str, line: int, src: str) -> dict[str, str]:
         payload = json.dumps({
             "model": self.config.model,
             "prompt": prompt,
             "stream": False,
             "format": "json",
-            "options": {"temperature": self.config.temperature, "num_predict": 150},
+            "options": {"temperature": self.config.temperature, "num_predict": 300},
         }).encode("utf-8")
 
         req = urllib.request.Request(
@@ -321,13 +469,10 @@ Respond ONLY with valid JSON having the keys 'explanation' and 'suggestion'."""
             data=payload,
             headers={"Content-Type": "application/json", "User-Agent": "PyDebug/0.1.0"},
         )
-        with urllib.request.urlopen(req, timeout=12) as response:
+        with urllib.request.urlopen(req, timeout=45) as response:
             raw = json.loads(response.read().decode("utf-8"))
             resp_str = raw.get("response", "{}")
-            try:
-                parsed = json.loads(resp_str)
-            except Exception:
-                parsed = {"explanation": resp_str, "suggestion": "Inspect runtime state in timeline."}
+            parsed = _extract_json_or_text(resp_str)
             return {
                 "explanation": parsed.get("explanation", f"Executed line {line}: {src}"),
                 "suggestion": parsed.get("suggestion", "Verify variable bounds and edge conditions."),
@@ -348,7 +493,7 @@ Respond ONLY with valid JSON having the keys 'explanation' and 'suggestion'."""
                 {"role": "user", "content": prompt},
             ],
             "temperature": self.config.temperature,
-            "max_tokens": 160,
+            "max_tokens": 300,
         }
         if self.config.provider in ("openai", "deepseek"):
             payload_dict["response_format"] = {"type": "json_object"}
@@ -358,17 +503,73 @@ Respond ONLY with valid JSON having the keys 'explanation' and 'suggestion'."""
             data=json.dumps(payload_dict).encode("utf-8"),
             headers=headers,
         )
-        with urllib.request.urlopen(req, timeout=14) as response:
+        with urllib.request.urlopen(req, timeout=45) as response:
             raw = json.loads(response.read().decode("utf-8"))
             content = raw.get("choices", [{}])[0].get("message", {}).get("content", "{}")
-            try:
-                parsed = json.loads(content)
-            except Exception:
-                parsed = {"explanation": content, "suggestion": "Review execution trace step."}
+            parsed = _extract_json_or_text(content)
             return {
                 "explanation": parsed.get("explanation", f"Executed line {line}: {src}"),
                 "suggestion": parsed.get("suggestion", "Verify variable bounds and edge conditions."),
             }
+
+    def _call_ollama_chat(self, messages: list[dict[str, str]]) -> str:
+        try:
+            payload = json.dumps({
+                "model": self.config.model,
+                "messages": messages,
+                "stream": False,
+                "options": {"temperature": self.config.temperature, "num_predict": 600},
+            }).encode("utf-8")
+
+            req = urllib.request.Request(
+                f"{self.config.base_url}/api/chat",
+                data=payload,
+                headers={"Content-Type": "application/json", "User-Agent": "PyDebug/0.1.0"},
+            )
+            with urllib.request.urlopen(req, timeout=45) as response:
+                data = json.loads(response.read().decode("utf-8"))
+                return data.get("message", {}).get("content", "").strip()
+        except Exception:
+            full_prompt = "\n\n".join(f"{m['role'].upper()}: {m['content']}" for m in messages) + "\n\nASSISTANT:"
+            payload = json.dumps({
+                "model": self.config.model,
+                "prompt": full_prompt,
+                "stream": False,
+                "options": {"temperature": self.config.temperature, "num_predict": 600},
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                f"{self.config.base_url}/api/generate",
+                data=payload,
+                headers={"Content-Type": "application/json", "User-Agent": "PyDebug/0.1.0"},
+            )
+            with urllib.request.urlopen(req, timeout=45) as response:
+                data = json.loads(response.read().decode("utf-8"))
+                return data.get("response", "").strip()
+
+    def _call_openai_chat(self, messages: list[dict[str, str]]) -> str:
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "PyDebug/0.1.0",
+        }
+        if self.config.api_key:
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
+
+        payload_dict: dict[str, Any] = {
+            "model": self.config.model,
+            "messages": messages,
+            "temperature": self.config.temperature,
+            "max_tokens": 600,
+        }
+
+        req = urllib.request.Request(
+            f"{self.config.base_url}/chat/completions",
+            data=json.dumps(payload_dict).encode("utf-8"),
+            headers=headers,
+        )
+        with urllib.request.urlopen(req, timeout=45) as response:
+            raw = json.loads(response.read().decode("utf-8"))
+            content = raw.get("choices", [{}])[0].get("message", {}).get("content", "")
+            return content.strip()
 
 
 # Global Singleton

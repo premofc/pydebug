@@ -356,6 +356,8 @@ class PyDebugHandler(BaseHTTPRequestHandler):
             self._handle_test_ai_connection()
         elif path == "/api/ai/explain-line":
             self._handle_ai_explain_line()
+        elif path == "/api/ai/chat":
+            self._handle_ai_chat()
         else:
             self.send_error(404, "Unknown POST endpoint")
 
@@ -806,6 +808,36 @@ class PyDebugHandler(BaseHTTPRequestHandler):
             self._send_json(200, json.dumps(result).encode("utf-8"))
         except Exception as e:
             logger.exception("AI explanation failed")
+            self._send_json(500, json.dumps({"error": str(e)}).encode("utf-8"))
+
+    def _handle_ai_chat(self) -> None:
+        try:
+            payload = self._read_json_body()
+            query = payload.get("query") or payload.get("message") or ""
+            func = payload.get("func", "unknown")
+            line = payload.get("line", 0)
+            src = payload.get("src", "")
+            vars_dict = payload.get("vars", {})
+            diffs_dict = payload.get("vars_diff", {})
+            expressions = payload.get("expressions", [])
+            history = payload.get("history", [])
+            prompt_type = payload.get("prompt_type", "custom")
+
+            mgr = get_ai_manager()
+            result = mgr.chat(
+                query=query,
+                func=func,
+                line=line,
+                src=src,
+                vars_dict=vars_dict,
+                diffs_dict=diffs_dict,
+                expressions=expressions,
+                history=history,
+                prompt_type=prompt_type,
+            )
+            self._send_json(200, json.dumps(result).encode("utf-8"))
+        except Exception as e:
+            logger.exception("AI chat failed")
             self._send_json(500, json.dumps({"error": str(e)}).encode("utf-8"))
 
     def _serve_sse_stream(self) -> None:

@@ -48,7 +48,7 @@ describe('App Root Component', () => {
     // Click Playground / Sandbox navigation pill
     const sandboxBtn = screen.getByTitle(/Interactive Function Runner/i);
     fireEvent.click(sandboxBtn);
-    expect(screen.getByText('Target Functions')).toBeInTheDocument();
+    expect(screen.getByText(/Switch Function/i)).toBeInTheDocument();
 
     // Click Birdseye navigation pill (shows clean empty state when no trace loaded)
     const flameBtn = screen.getByTitle(/Expression.*Inspector/i);

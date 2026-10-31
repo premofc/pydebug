@@ -18,10 +18,126 @@ import {
   CornerDownRight,
   Bot,
   RefreshCw,
-  Lightbulb,
   ShieldAlert,
-  Terminal
+  Terminal,
+  Send,
+  Trash2,
+  Wrench,
+  AlertCircle
 } from 'lucide-react';
+
+interface AiChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+  promptType?: 'explain' | 'alteration' | 'edge_cases' | 'rca' | 'custom';
+}
+
+function renderInlineMarkdown(text: string): React.ReactNode {
+  const tokens = text.split(/(\*\*.*?\*\*|`.*?`)/g);
+  return tokens.map((tok, i) => {
+    if (tok.startsWith('**') && tok.endsWith('**')) {
+      return <strong key={i} className="font-semibold text-slate-900 dark:text-slate-100">{tok.slice(2, -2)}</strong>;
+    }
+    if (tok.startsWith('`') && tok.endsWith('`')) {
+      return <code key={i} className="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 font-mono text-[11px] border border-slate-200 dark:border-white/[0.08]">{tok.slice(1, -1)}</code>;
+    }
+    return tok;
+  });
+}
+
+const MarkdownContent: React.FC<{ text: string }> = ({ text }) => {
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const parts = text.split(/(```[\s\S]*?```)/g);
+
+  return (
+    <div className="space-y-2 text-xs leading-relaxed font-sans text-slate-800 dark:text-slate-200">
+      {parts.map((part, idx) => {
+        if (part.startsWith('```') && part.endsWith('```')) {
+          const lines = part.slice(3, -3).trimStart().split('\n');
+          const firstLine = lines[0].trim();
+          const hasLang = firstLine && !firstLine.includes(' ') && !firstLine.includes(':');
+          const lang = hasLang ? firstLine : '';
+          const code = hasLang ? lines.slice(1).join('\n') : lines.join('\n');
+
+          const handleCopy = () => {
+            navigator.clipboard.writeText(code);
+            setCopiedIndex(idx);
+            setTimeout(() => setCopiedIndex(null), 1500);
+          };
+
+          return (
+            <div key={idx} className="my-2 rounded-lg overflow-hidden border border-slate-700/60 bg-slate-950 text-slate-100 shadow-xs font-mono text-[11px]">
+              <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900 border-b border-slate-800 text-[10px] text-slate-400">
+                <span className="uppercase tracking-wider font-semibold text-indigo-400">{lang || 'CODE'}</span>
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="flex items-center gap-1 hover:text-slate-200 transition-colors cursor-pointer"
+                  title="Copy code"
+                >
+                  {copiedIndex === idx ? (
+                    <>
+                      <Check className="w-3 h-3 text-emerald-400" />
+                      <span className="text-emerald-400">Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre className="p-3 overflow-x-auto whitespace-pre font-mono leading-normal select-text">
+                <code>{code}</code>
+              </pre>
+            </div>
+          );
+        }
+
+        const lines = part.split('\n');
+        return (
+          <div key={idx} className="space-y-1">
+            {lines.map((line, lIdx) => {
+              const trimmed = line.trim();
+              if (!trimmed) return <div key={lIdx} className="h-1" />;
+
+              if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+                return (
+                  <div key={lIdx} className="flex items-start gap-1.5 pl-1.5">
+                    <span className="text-indigo-500 font-bold shrink-0 mt-0.5">•</span>
+                    <span>{renderInlineMarkdown(trimmed.slice(2))}</span>
+                  </div>
+                );
+              }
+
+              const numMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
+              if (numMatch) {
+                return (
+                  <div key={lIdx} className="flex items-start gap-1.5 pl-1.5">
+                    <span className="text-indigo-400 font-bold shrink-0 mt-0.5 font-mono text-[10px]">{numMatch[1]}.</span>
+                    <span>{renderInlineMarkdown(numMatch[2])}</span>
+                  </div>
+                );
+              }
+
+              if (trimmed.startsWith('### ')) {
+                return <h4 key={lIdx} className="font-semibold text-slate-900 dark:text-slate-100 text-xs mt-2">{renderInlineMarkdown(trimmed.slice(4))}</h4>;
+              }
+              if (trimmed.startsWith('## ') || trimmed.startsWith('# ')) {
+                return <h3 key={lIdx} className="font-bold text-slate-900 dark:text-slate-100 text-xs mt-2">{renderInlineMarkdown(trimmed.replace(/^#+\s*/, ''))}</h3>;
+              }
+
+              return <p key={lIdx}>{renderInlineMarkdown(line)}</p>;
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 import type { TraceSession, TraceEvent, AiExplanation, AIProviderConfig } from '../types';
 
 interface HunterPageProps {
@@ -48,9 +164,12 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
   const [pinnedVars, setPinnedVars] = useState<string[]>([]);
 
   // AI Co-Pilot State
-  const [aiExplanation, setAiExplanation] = useState<AiExplanation | null>(null);
+  const [, setAiExplanation] = useState<AiExplanation | null>(null);
   const [aiLoading, setAiLoading] = useState<boolean>(false);
   const [aiCache, setAiCache] = useState<Record<number, AiExplanation>>({});
+  const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([]);
+  const [aiChatInput, setAiChatInput] = useState<string>('');
+  const chatBottomRef = useRef<HTMLDivElement | null>(null);
 
   const lineRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const currentEvent: TraceEvent | undefined = events[currentIdx];
@@ -111,6 +230,91 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
 
     return () => clearInterval(timer);
   }, [isPlaying, playbackSpeed, events.length]);
+
+  const sendAiChat = async (promptType: 'explain' | 'alteration' | 'edge_cases' | 'rca' | 'custom', customQuery?: string) => {
+    if (!currentEvent || aiLoading) return;
+    const queryText = customQuery || (promptType === 'custom' ? aiChatInput : '');
+    if (promptType === 'custom' && !queryText.trim()) return;
+
+    let displayUserText = queryText;
+    if (promptType === 'explain') displayUserText = `⚡ Explain line ${currentEvent.line}: ${currentEvent.src.trim()}`;
+    else if (promptType === 'alteration') displayUserText = `🛠️ Suggest code alteration for line ${currentEvent.line}`;
+    else if (promptType === 'edge_cases') displayUserText = `🛡️ Audit edge cases for line ${currentEvent.line}`;
+    else if (promptType === 'rca') displayUserText = `🔍 Root cause analysis on line ${currentEvent.line}`;
+
+    const userMsg: AiChatMessage = {
+      id: `msg-${Date.now()}-${Math.random()}`,
+      role: 'user',
+      content: displayUserText,
+      timestamp: Date.now(),
+      promptType,
+    };
+
+    setAiMessages((prev) => [...prev, userMsg]);
+    if (promptType === 'custom') setAiChatInput('');
+    setAiLoading(true);
+
+    try {
+      const historyPayload = aiMessages.slice(-6).map((m) => ({ role: m.role, content: m.content }));
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: queryText,
+          func: currentEvent.func,
+          line: currentEvent.line,
+          src: currentEvent.src,
+          vars: currentEvent.vars,
+          vars_diff: currentEvent.vars_diff,
+          expressions: currentEvent.expressions || [],
+          history: historyPayload,
+          prompt_type: promptType,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const replyText = data.response || data.explanation || 'No response returned from AI.';
+        const assistantMsg: AiChatMessage = {
+          id: `msg-${Date.now()}-${Math.random()}`,
+          role: 'assistant',
+          content: replyText,
+          timestamp: Date.now(),
+          promptType,
+        };
+        setAiMessages((prev) => [...prev, assistantMsg]);
+        setAiExplanation({
+          explanation: replyText,
+          suggestion: 'Refer to interactive AI Co-Pilot chat thread for detailed steps.',
+        });
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        const assistantMsg: AiChatMessage = {
+          id: `msg-${Date.now()}-${Math.random()}`,
+          role: 'assistant',
+          content: `⚠️ Request failed (${res.status}): ${errData.error || res.statusText}. Open AI settings to verify provider.`,
+          timestamp: Date.now(),
+        };
+        setAiMessages((prev) => [...prev, assistantMsg]);
+      }
+    } catch (err: any) {
+      const assistantMsg: AiChatMessage = {
+        id: `msg-${Date.now()}-${Math.random()}`,
+        role: 'assistant',
+        content: `⚠️ Failed to connect to AI server: ${err.message}. Open AI settings to verify endpoint.`,
+        timestamp: Date.now(),
+      };
+      setAiMessages((prev) => [...prev, assistantMsg]);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'ai' && chatBottomRef.current) {
+      chatBottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [aiMessages, aiLoading, activeTab]);
 
   // Fetch AI explanation for the current line
   const fetchAiExplanation = async (promptType = 'explain') => {
@@ -886,113 +1090,255 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
             </div>
           )}
 
-          {/* TAB 2: AI CO-PILOT (Multi-Provider: Ollama, OpenAI, DeepSeek, Custom) */}
+          {/* TAB 2: AI CO-PILOT STUDIO (Multi-Provider: Ollama, OpenAI, DeepSeek, Custom) */}
           {activeTab === 'ai' && (
-            <div className="flex-1 flex flex-col p-4 overflow-y-auto space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-white/[0.08]">
+            <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50/50 dark:bg-slate-950/30">
+              {/* Header: Provider & Model + Controls */}
+              <div className="p-3 border-b border-slate-200 dark:border-white/[0.08] bg-white dark:bg-slate-900 flex items-center justify-between shrink-0 shadow-2xs">
                 <div className="flex items-center gap-2">
-                  <Bot className="w-4 h-4 text-indigo-500 animate-pulse" />
-                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                    AI Co-Pilot
-                  </span>
-                  <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 capitalize">
-                    {aiConfig?.provider || 'Ollama'}
-                  </span>
-                  <span className="text-[10px] font-mono text-slate-400 hidden sm:inline">
-                    {aiConfig?.model || 'qwen2.5:7b-instruct'}
-                  </span>
+                  <div className="p-1 rounded-lg bg-indigo-500/10 text-indigo-500">
+                    <Bot className="w-4 h-4 animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                        AI Co-Pilot
+                      </span>
+                      <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 capitalize">
+                        {aiConfig?.provider || 'Ollama'}
+                      </span>
+                    </div>
+                    <div className="text-[10px] font-mono text-slate-400 truncate max-w-[180px]">
+                      {aiConfig?.model || 'qwen2.5:7b-instruct'}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-1.5">
+                  {aiMessages.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setAiMessages([])}
+                      className="p-1.5 text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                      title="Clear chat history"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   {onOpenAiSettings && (
                     <button
+                      type="button"
                       onClick={onOpenAiSettings}
-                      className="px-2 py-0.5 rounded text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 transition-colors"
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 transition-colors cursor-pointer"
                       title="Configure AI Provider & Model"
                     >
                       Configure AI
                     </button>
                   )}
-                  <button
-                    onClick={() => fetchAiExplanation('explain')}
+                </div>
+              </div>
+
+              {/* Target Line Context Banner */}
+              <div className="px-3.5 py-2.5 bg-slate-100/80 dark:bg-slate-900/60 border-b border-slate-200 dark:border-white/[0.08] shrink-0">
+                <div className="flex items-center justify-between text-[11px] font-mono mb-1">
+                  <span className="text-slate-500 font-semibold tracking-wide">
+                    ANALYZING LINE {currentEvent?.line}:
+                  </span>
+                  <span className="text-indigo-600 dark:text-indigo-400 font-bold">
+                    {currentEvent?.func}()
+                  </span>
+                </div>
+                <div className="font-mono text-xs text-slate-800 dark:text-slate-200 truncate bg-white dark:bg-slate-950 px-2.5 py-1.5 rounded-md border border-slate-200/80 dark:border-white/[0.06]">
+                  {currentEvent?.src || 'No source line available'}
+                </div>
+              </div>
+
+              {/* Quick Action Chips Bar */}
+              <div className="px-3.5 py-2 border-b border-slate-200/70 dark:border-white/[0.06] bg-white/60 dark:bg-slate-900/40 flex items-center gap-1.5 overflow-x-auto shrink-0 no-scrollbar">
+                <button
+                  type="button"
+                  onClick={() => sendAiChat('explain')}
+                  disabled={aiLoading}
+                  className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800/60 text-[11px] font-semibold text-indigo-700 dark:text-indigo-300 transition-colors flex items-center gap-1 shrink-0 cursor-pointer disabled:opacity-50"
+                >
+                  <Sparkles className="w-3 h-3 text-indigo-500" />
+                  <span>⚡ Explain Line</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => sendAiChat('alteration')}
+                  disabled={aiLoading}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/60 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 transition-colors flex items-center gap-1 shrink-0 cursor-pointer disabled:opacity-50"
+                >
+                  <Wrench className="w-3 h-3 text-emerald-500" />
+                  <span>🛠️ Suggest Fix</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => sendAiChat('edge_cases')}
+                  disabled={aiLoading}
+                  className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 border border-amber-200 dark:border-amber-800/60 text-[11px] font-semibold text-amber-700 dark:text-amber-300 transition-colors flex items-center gap-1 shrink-0 cursor-pointer disabled:opacity-50"
+                >
+                  <ShieldAlert className="w-3 h-3 text-amber-500" />
+                  <span>🛡️ Edge Cases</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => sendAiChat('rca')}
+                  disabled={aiLoading}
+                  className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 border border-rose-200 dark:border-rose-800/60 text-[11px] font-semibold text-rose-700 dark:text-rose-300 transition-colors flex items-center gap-1 shrink-0 cursor-pointer disabled:opacity-50"
+                >
+                  <AlertCircle className="w-3 h-3 text-rose-500" />
+                  <span>🔍 Root Cause</span>
+                </button>
+              </div>
+
+              {/* Chat Messages Stream */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3.5">
+                {aiMessages.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-inner">
+                      <Bot className="w-6 h-6" />
+                    </div>
+                    <div className="max-w-xs space-y-1">
+                      <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                        Interactive AI Debugging Studio
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Select a prompt above or ask any freeform question about runtime variables, code logic, or failures.
+                      </p>
+                    </div>
+
+                    <div className="w-full grid grid-cols-2 gap-2 max-w-sm pt-2">
+                      <button
+                        type="button"
+                        onClick={() => sendAiChat('explain')}
+                        className="p-3 text-left rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.08] hover:border-indigo-500/60 transition-all cursor-pointer shadow-2xs group"
+                      >
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 group-hover:text-indigo-500">
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>Explain Line</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+                          Break down line behavior with active variable values.
+                        </p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => sendAiChat('alteration')}
+                        className="p-3 text-left rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.08] hover:border-emerald-500/60 transition-all cursor-pointer shadow-2xs group"
+                      >
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 group-hover:text-emerald-500">
+                          <Wrench className="w-3.5 h-3.5" />
+                          <span>Suggest Fix</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+                          Propose a safer, idiomatic Python code refactoring.
+                        </p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => sendAiChat('edge_cases')}
+                        className="p-3 text-left rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.08] hover:border-amber-500/60 transition-all cursor-pointer shadow-2xs group"
+                      >
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400 group-hover:text-amber-500">
+                          <ShieldAlert className="w-3.5 h-3.5" />
+                          <span>Audit Edges</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+                          Detect None, zero, empty collection exceptions.
+                        </p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => sendAiChat('rca')}
+                        className="p-3 text-left rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.08] hover:border-rose-500/60 transition-all cursor-pointer shadow-2xs group"
+                      >
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-rose-600 dark:text-rose-400 group-hover:text-rose-500">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          <span>Root Cause</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+                          Diagnose unexpected exceptions or return states.
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  aiMessages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+                    >
+                      <div
+                        className={`max-w-[92%] rounded-2xl p-3.5 shadow-2xs ${
+                          msg.role === 'user'
+                            ? 'bg-indigo-600 text-white font-medium text-xs rounded-br-xs'
+                            : 'bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-white/[0.08] rounded-bl-xs w-full'
+                        }`}
+                      >
+                        {msg.role === 'assistant' ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/[0.06] pb-1.5">
+                              <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                                <Bot className="w-3.5 h-3.5" />
+                                <span>AI CO-PILOT</span>
+                              </div>
+                              <span className="text-[10px] font-mono text-slate-400">
+                                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                              </span>
+                            </div>
+                            <MarkdownContent text={msg.content} />
+                          </div>
+                        ) : (
+                          <div className="text-xs whitespace-pre-wrap leading-relaxed">
+                            {msg.content}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+
+                {aiLoading && (
+                  <div className="flex items-center gap-2.5 p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.08] text-xs text-slate-500 dark:text-slate-400 shadow-2xs max-w-sm">
+                    <RefreshCw className="w-4 h-4 animate-spin text-indigo-500 shrink-0" />
+                    <span>Analyzing live runtime execution with {aiConfig?.provider || 'AI'}...</span>
+                  </div>
+                )}
+                <div ref={chatBottomRef} />
+              </div>
+
+              {/* Chat Input Container */}
+              <div className="p-3 border-t border-slate-200 dark:border-white/[0.08] bg-white dark:bg-slate-900 shrink-0">
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    sendAiChat('custom');
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <input
+                    type="text"
+                    value={aiChatInput}
+                    onChange={(e) => setAiChatInput(e.target.value)}
+                    placeholder={`Ask about line ${currentEvent?.line || ''} or variables...`}
                     disabled={aiLoading}
-                    className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                    title="Re-analyze current line"
+                    className="flex-1 px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/[0.1] text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-sans"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!aiChatInput.trim() || aiLoading}
+                    className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 disabled:cursor-not-allowed shadow-xs transition-all cursor-pointer shrink-0"
+                    title="Send message"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${aiLoading ? 'animate-spin' : ''}`} />
+                    <Send className="w-3.5 h-3.5" />
                   </button>
-                </div>
+                </form>
               </div>
-
-              {/* Current Target Line Box */}
-              <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.08] text-xs font-mono">
-                <div className="text-slate-400 text-[10px] mb-1 flex items-center justify-between">
-                  <span>ANALYZING LINE {currentEvent?.line}:</span>
-                  <span className="text-indigo-500">{currentEvent?.func}()</span>
-                </div>
-                <div className="font-semibold text-slate-800 dark:text-slate-200">
-                  {currentEvent?.src}
-                </div>
-              </div>
-
-              {/* AI Explanation Content */}
-              {aiLoading ? (
-                <div className="p-8 text-center text-xs text-slate-400 flex flex-col items-center gap-2">
-                  <RefreshCw className="w-5 h-5 animate-spin text-indigo-500" />
-                  <span>Synthesizing live variable state with {aiConfig?.provider || 'your'} AI provider...</span>
-                </div>
-              ) : aiExplanation ? (
-                <div className="space-y-3">
-                  {/* Semantic Line Explanation */}
-                  <div className="p-3.5 rounded-lg bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/80 shadow-xs">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-300 mb-1.5">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>What Happened On This Line:</span>
-                    </div>
-                    <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-sans">
-                      {aiExplanation.explanation}
-                    </p>
-                  </div>
-
-                  {/* Smart Code Suggestion & Edge Case */}
-                  <div className="p-3.5 rounded-lg bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/80 shadow-xs">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1.5">
-                      <Lightbulb className="w-3.5 h-3.5" />
-                      <span>AI Code Insight & Edge-Case Tip:</span>
-                    </div>
-                    <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-sans">
-                      {aiExplanation.suggestion}
-                    </p>
-                  </div>
-
-                  {/* Quick Action Chips */}
-                  <div className="pt-2">
-                    <span className="text-[11px] font-semibold text-slate-400 block mb-1.5 uppercase">
-                      Quick Prompts:
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      <button
-                        onClick={() => fetchAiExplanation('alteration')}
-                        className="px-2.5 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-700 dark:text-slate-300 hover:border-indigo-500 transition-colors flex items-center gap-1"
-                      >
-                        <Sparkles className="w-3 h-3 text-indigo-500" />
-                        <span>Suggest Alteration</span>
-                      </button>
-                      <button
-                        onClick={() => fetchAiExplanation('edge_cases')}
-                        className="px-2.5 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-700 dark:text-slate-300 hover:border-amber-500 transition-colors flex items-center gap-1"
-                      >
-                        <ShieldAlert className="w-3 h-3 text-amber-500" />
-                        <span>Audit Edge Cases</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-8 text-center text-xs text-slate-400 font-mono border border-dashed border-slate-200 dark:border-white/[0.08] rounded-lg">
-                  Click the button above to explain the active line with {aiConfig?.provider || 'your'} AI provider.
-                </div>
-              )}
             </div>
           )}
 

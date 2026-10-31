@@ -1,6 +1,5 @@
 import React from 'react';
 import { 
-  Zap, 
   Sun, 
   Moon, 
   Clock, 
@@ -63,14 +62,38 @@ export const Navbar: React.FC<NavbarProps> = ({
           onClick={() => onPageChange('dashboard')}
           className="flex items-center gap-2.5 cursor-pointer group"
         >
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/25 group-hover:scale-105 transition-transform duration-200">
-            <Zap className="w-4 h-4 fill-white" />
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-0.5 shadow-md shadow-indigo-500/20 group-hover:shadow-indigo-500/40 border border-indigo-500/30 group-hover:scale-105 transition-all duration-200 flex items-center justify-center">
+            <svg className="w-6 h-6" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="pydebug-g1" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#38bdf8" />
+                  <stop offset="100%" stopColor="#6366f1" />
+                </linearGradient>
+                <linearGradient id="pydebug-g2" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#818cf8" />
+                  <stop offset="100%" stopColor="#c084fc" />
+                </linearGradient>
+              </defs>
+              <path
+                d="M16 3C9.37 3 9 5.86 9 8.5V12H16V13.5H6.5C3.86 13.5 2 15.37 2 20C2 24.63 4.37 26.5 7 26.5H10.5V23C10.5 20.37 12.37 18.5 15 18.5H22V16.5C22 13.86 20.13 12 17.5 12H13.5V8.5C13.5 5.86 15.37 3 16 3Z"
+                fill="url(#pydebug-g1)"
+                opacity="0.95"
+              />
+              <path
+                d="M16 29C22.63 29 23 26.14 23 23.5V20H16V18.5H25.5C28.14 18.5 30 16.63 30 12C30 7.37 27.63 5.5 25 5.5H21.5V9C21.5 11.63 19.63 13.5 17 13.5H10V15.5C10 18.14 11.87 20 14.5 20H18.5V23.5C18.5 26.14 16.63 29 16 29Z"
+                fill="url(#pydebug-g2)"
+                opacity="0.95"
+              />
+              <circle cx="11.5" cy="7.5" r="1.5" fill="#ffffff" />
+              <circle cx="20.5" cy="24.5" r="1.5" fill="#ffffff" />
+              <circle cx="16" cy="16" r="2" fill="#38bdf8" />
+            </svg>
           </div>
           <div className="flex flex-col">
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-sm tracking-tight text-slate-900 dark:text-white">PyDebug</span>
               <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 font-mono">
-                v0.1.8
+                v0.1.9
               </span>
             </div>
             <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium tracking-wide">STUDIO</span>

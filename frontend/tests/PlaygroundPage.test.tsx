@@ -50,11 +50,10 @@ describe('PlaygroundPage Component', () => {
       />
     );
 
-    expect(screen.getByText('Target Functions')).toBeInTheDocument();
+    expect(screen.getByText(/Switch Function/i)).toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getAllByText(/calculate_tax/).length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText(/tax\.py/).length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -70,8 +69,6 @@ describe('PlaygroundPage Component', () => {
     await waitFor(() => {
       expect(screen.getAllByText(/calculate_tax/).length).toBeGreaterThanOrEqual(1);
     });
-
-    fireEvent.click(screen.getAllByText(/calculate_tax/)[0]);
 
     expect(screen.getByText(/Python Invocation Expression/i)).toBeInTheDocument();
     expect(screen.getByText(/Parameters \(2\)/i)).toBeInTheDocument();
@@ -91,7 +88,6 @@ describe('PlaygroundPage Component', () => {
     await waitFor(() => {
       expect(screen.getAllByText(/calculate_tax/).length).toBeGreaterThanOrEqual(1);
     });
-    fireEvent.click(screen.getAllByText(/calculate_tax/)[0]);
 
     const amountInput = screen.getByPlaceholderText('Enter amount...');
     fireEvent.change(amountInput, { target: { value: '500' } });
@@ -356,7 +352,7 @@ describe('PlaygroundPage Component', () => {
     expect(screen.queryByText('Starting tax calculation')).not.toBeInTheDocument();
   });
 
-  it('supports collapsing and expanding panels via splitter tools', async () => {
+  it('supports opening and closing function switcher modal', async () => {
     render(
       <PlaygroundPage
         session={dummySession}
@@ -365,14 +361,13 @@ describe('PlaygroundPage Component', () => {
       />
     );
 
-    const collapseLeftBtn = screen.getByTitle('Collapse Functions Panel');
-    fireEvent.click(collapseLeftBtn);
+    await waitFor(() => {
+      expect(screen.getByText(/Switch Function/i)).toBeInTheDocument();
+    });
 
-    expect(screen.getByTitle('Expand Target Functions')).toBeInTheDocument();
+    const switchBtn = screen.getByRole('button', { name: /Switch Function/i });
+    fireEvent.click(switchBtn);
 
-    const expandLeftBtn = screen.getByTitle('Expand Target Functions');
-    fireEvent.click(expandLeftBtn);
-
-    expect(screen.getByText('Target Functions')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Switch function by name/i)).toBeInTheDocument();
   });
 });
