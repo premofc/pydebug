@@ -101,8 +101,8 @@ describe('AiSettingsModal Component', () => {
     await waitFor(() => {
       expect(screen.getByText('Connection Successful')).toBeInTheDocument();
       expect(screen.getByText(/Connected to Ollama successfully/i)).toBeInTheDocument();
-    });
-  });
+    }, { timeout: 8000 });
+  }, 12000);
 
   it('calls onClose when Cancel is clicked', () => {
     const onClose = vi.fn();

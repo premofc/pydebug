@@ -37,6 +37,36 @@ describe('PlaygroundPage Component', () => {
           json: () => Promise.resolve(mockDiscoveredFunctions),
         });
       }
+      if (url.startsWith('/api/function-inspection')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              func_name: 'calculate_tax',
+              file_path: 'C:/app/tax.py',
+              rel_path: 'tax.py',
+              implementation: {
+                file_path: 'C:/app/tax.py',
+                rel_path: 'tax.py',
+                start_line: 1,
+                end_line: 2,
+                code: 'def calculate_tax(amount, rate=0.1):\n    return amount * rate',
+                is_async: false,
+              },
+              references: [
+                {
+                  file_path: 'C:/app/main.py',
+                  rel_path: 'main.py',
+                  line: 25,
+                  caller_context: 'run_invoice()',
+                  snippet: '    total = calculate_tax(500)',
+                  is_internal: false,
+                },
+              ],
+              total_references: 1,
+            }),
+        });
+      }
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
     });
   });
@@ -138,11 +168,12 @@ describe('PlaygroundPage Component', () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
     });
 
+    const onNavigateToHunter = vi.fn();
     render(
       <PlaygroundPage
         session={dummySession}
         onSessionUpdated={onSessionUpdated}
-        onNavigateToHunter={vi.fn()}
+        onNavigateToHunter={onNavigateToHunter}
       />
     );
 
@@ -158,7 +189,13 @@ describe('PlaygroundPage Component', () => {
       expect(screen.getByText(/Execution Succeeded \(200 OK\)/i)).toBeInTheDocument();
       expect(screen.getByText('10.0')).toBeInTheDocument();
       expect(onSessionUpdated).toHaveBeenCalledWith(updatedSession);
+      expect(screen.getByText(/View in Timeline Replay/i)).toBeInTheDocument();
+      expect(screen.getByText(/View Logs/i)).toBeInTheDocument();
     });
+
+    const replayBtn = screen.getByText(/View in Timeline Replay/i);
+    fireEvent.click(replayBtn);
+    expect(onNavigateToHunter).toHaveBeenCalled();
   });
 
   it('handles failure execution with failure line and navigation button', async () => {
@@ -337,10 +374,10 @@ describe('PlaygroundPage Component', () => {
     fireEvent.click(executeBtn);
 
     await waitFor(() => {
-      expect(screen.getByText(/Logs \(3\)/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/Logs \(3\)/i).length).toBeGreaterThanOrEqual(1);
     });
 
-    fireEvent.click(screen.getByText(/Logs \(3\)/i));
+    fireEvent.click(screen.getAllByText(/Logs \(3\)/i)[0]);
 
     expect(screen.getByText('Starting tax calculation')).toBeInTheDocument();
     expect(screen.getByText('Tax rate applied: 0.15')).toBeInTheDocument();
@@ -369,5 +406,35 @@ describe('PlaygroundPage Component', () => {
     fireEvent.click(switchBtn);
 
     expect(screen.getByPlaceholderText(/Switch function by name/i)).toBeInTheDocument();
+  });
+  it('switches to References & Code tab and displays implementation and caller references', async () => {
+    render(
+      <PlaygroundPage
+        session={dummySession}
+        onSessionUpdated={vi.fn()}
+        onNavigateToHunter={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/calculate_tax/).length).toBeGreaterThanOrEqual(1);
+    });
+
+    const refTabBtn = screen.getByRole('button', { name: /References & Code/i });
+    fireEvent.click(refTabBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Callers & Usages/i)).toBeInTheDocument();
+      expect(screen.getByText('main.py')).toBeInTheDocument();
+      expect(screen.getByText(':L25')).toBeInTheDocument();
+      expect(screen.getByText('run_invoice()')).toBeInTheDocument();
+      expect(screen.getByText(/calculate_tax\(500\)/)).toBeInTheDocument();
+    });
+
+    // Switch sub-tab to Source Implementation
+    const implBtn = screen.getByRole('button', { name: /Source Implementation/i });
+    fireEvent.click(implBtn);
+
+    expect(screen.getByText(/def calculate_tax\(amount, rate=0\.1\):/)).toBeInTheDocument();
   });
 });

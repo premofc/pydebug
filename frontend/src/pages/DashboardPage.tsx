@@ -68,6 +68,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
   const [searchQuery, setSearchQuery] = useState('');
   const [funcSearchQuery, setFuncSearchQuery] = useState('');
   const [showAllFuncs, setShowAllFuncs] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'mcp' | 'api' | 'script'>('all');
 
   const listenerPort = window.location.port || '8899';
   const aiHost = useMemo(() => {
@@ -145,16 +146,29 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
     return Math.round((sessions.reduce((acc, s) => acc + (s.stats?.duration_ms || 0), 0) / sessions.length) * 10) / 10;
   }, [sessions]);
 
+  const mcpCount = useMemo(() => sessions.filter(s => s.tag === 'MCP Tool' || s.title.startsWith('[MCP') || s.title.startsWith('MCP:')).length, [sessions]);
+  const apiCount = useMemo(() => sessions.filter(s => s.tag === 'FastAPI Endpoint' || s.title.startsWith('POST') || s.title.startsWith('GET')).length, [sessions]);
+  const scriptCount = useMemo(() => sessions.filter(s => s.tag === 'Python Script' || s.tag === 'Server Startup' || s.tag === 'Script Run' || s.title.startsWith('[Server Startup')).length, [sessions]);
+
   const filteredSessions = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    return sessions.filter(
-      (s) =>
+    return sessions.filter((s) => {
+      const matchesCategory =
+        categoryFilter === 'all' ||
+        (categoryFilter === 'mcp' && (s.tag === 'MCP Tool' || s.title.startsWith('[MCP') || s.title.startsWith('MCP:'))) ||
+        (categoryFilter === 'api' && (s.tag === 'FastAPI Endpoint' || s.title.startsWith('POST') || s.title.startsWith('GET'))) ||
+        (categoryFilter === 'script' && (s.tag === 'Python Script' || s.tag === 'Server Startup' || s.tag === 'Script Run' || s.title.startsWith('[Server Startup')));
+
+      if (!matchesCategory) return false;
+
+      return (
         !q ||
         s.title.toLowerCase().includes(q) ||
         (s.first_func && s.first_func.toLowerCase().includes(q)) ||
         s.tag.toLowerCase().includes(q)
-    );
-  }, [sessions, searchQuery]);
+      );
+    });
+  }, [sessions, searchQuery, categoryFilter]);
 
   // Keep the "Discovered Functions" panel compact: show a fixed batch by
   // default, with scroll + expand for the rest.
@@ -196,7 +210,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
   const badgeFor = (s: SessionSummary) => {
     if (s.title.startsWith('POST')) return 'POST bg-emerald-600 shadow-emerald-500/20';
     if (s.title.startsWith('GET')) return 'GET bg-sky-600 shadow-sky-500/20';
-    if (s.tag === 'MCP Tool') return 'MCP bg-purple-600 shadow-purple-500/20';
+    if (s.tag === 'MCP Tool' || s.title.startsWith('[MCP') || s.title.startsWith('MCP:')) return 'MCP bg-purple-600 shadow-purple-500/20';
+    if (s.tag === 'Server Startup' || s.title.startsWith('[Server Startup')) return 'BOOT bg-amber-600 shadow-amber-500/20';
+    if (s.tag === 'Script Run' || s.title.startsWith('[Script')) return 'RUN bg-indigo-600 shadow-indigo-500/20';
     if (s.tag === 'Playground Run') return 'TEST bg-amber-600 shadow-amber-500/20';
     return 'FN bg-indigo-600 shadow-indigo-500/20';
   };
@@ -204,10 +220,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors">
       {/* Hero + system status with ambient radial glow */}
-      <div className="relative overflow-hidden border-b border-slate-200/70 dark:border-white/[0.08] bg-white/80 dark:bg-[#060911]/90 backdrop-blur-md px-6 py-6 transition-colors">
+      <div className="relative overflow-hidden border-b border-slate-200/70 dark:border-white/[0.08] bg-white/80 dark:bg-[#060911]/90 backdrop-blur-md px-6 sm:px-10 lg:px-12 py-7 transition-colors">
         <div className="absolute top-0 right-1/4 w-96 h-36 bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent blur-3xl pointer-events-none" />
         
-        <div className="max-w-6xl mx-auto relative z-10">
+        <div className="max-w-7xl mx-auto relative z-10">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-3">
@@ -313,7 +329,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto w-full p-6 space-y-6">
+      <div className="max-w-7xl mx-auto w-full px-6 sm:px-10 lg:px-12 py-8 space-y-8 pb-28">
         {/* Recorded sessions */}
         <div className="space-y-3">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
@@ -342,6 +358,57 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
             </div>
           </div>
 
+          {/* Category Filter Tab Bar */}
+          <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200/80 dark:border-white/[0.08] text-xs font-medium">
+            <button
+              type="button"
+              onClick={() => setCategoryFilter('all')}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                categoryFilter === 'all'
+                  ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              All Runs ({sessions.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setCategoryFilter('mcp')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                categoryFilter === 'mcp'
+                  ? 'bg-purple-600 text-white shadow-xs font-bold'
+                  : 'text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/30'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-purple-400" />
+              MCP Tools ({mcpCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setCategoryFilter('api')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                categoryFilter === 'api'
+                  ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                  : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              API Endpoints ({apiCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setCategoryFilter('script')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                categoryFilter === 'script'
+                  ? 'bg-indigo-600 text-white shadow-xs font-bold'
+                  : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-indigo-400" />
+              Script & Boot Runs ({scriptCount})
+            </button>
+          </div>
+
           {filteredSessions.map((s) => {
             const isExpanded = expandedId === s.id;
             const badge = badgeFor(s);
@@ -360,6 +427,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
                     {s.first_func && (
                       <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 hidden sm:inline truncate">
                         {s.first_func}()
+                      </span>
+                    )}
+                    {s.created_at && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 hidden lg:inline shrink-0">
+                        {new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                       </span>
                     )}
                   </div>

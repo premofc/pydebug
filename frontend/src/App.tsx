@@ -1,4 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { 
+  LayoutDashboard, 
+  Play, 
+  Eye, 
+  FlaskConical 
+} from 'lucide-react';
 import { Navbar } from './components/Navbar';
 import { AiSettingsModal } from './components/AiSettingsModal';
 import { DashboardPage } from './pages/DashboardPage';
@@ -184,8 +190,15 @@ export const App: React.FC = () => {
     setCurrentPage(targetView);
   };
 
+  const navItems = [
+    { id: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'hunter' as const, label: 'Timeline Replay', icon: Play },
+    { id: 'birdseye' as const, label: 'Expression Flow', icon: Eye },
+    { id: 'playground' as const, label: 'Live Sandbox', icon: FlaskConical },
+  ];
+
   return (
-    <div className="h-screen w-screen flex flex-col overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors">
+    <div className="h-screen w-screen flex flex-col overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors relative">
       <Navbar
         theme={theme}
         onToggleTheme={toggleTheme}
@@ -208,7 +221,7 @@ export const App: React.FC = () => {
         onOpenAiSettings={openAiSettings}
       />
 
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden relative">
         {currentPage === 'dashboard' && (
           <DashboardPage
             onSelectSession={handleSelectSession}
@@ -256,6 +269,32 @@ export const App: React.FC = () => {
           />
         )}
       </main>
+
+      {/* Floating Bottom Quick Navigation Dock */}
+      <nav
+        aria-label="Bottom Navigation Dock"
+        className="fixed bottom-3.5 left-1/2 -translate-x-1/2 z-40 hidden md:flex items-center gap-1.5 p-1 rounded-full glass-dock-bottom shadow-2xl select-none transition-all duration-300 hover:scale-[1.01]"
+      >
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = currentPage === item.id;
+          return (
+            <button
+              key={`dock-${item.id}`}
+              onClick={() => setCurrentPage(item.id)}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 cursor-pointer ${
+                isActive
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 scale-105'
+                  : 'text-slate-400 hover:text-slate-100 hover:bg-white/10'
+              }`}
+              title={`Switch to ${item.label}`}
+            >
+              <Icon strokeWidth={isActive ? 2.5 : 2} className="w-3.5 h-3.5" />
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
 
       {/* Modern AI Co-Pilot Provider Configuration Modal */}
       <AiSettingsModal

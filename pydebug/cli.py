@@ -17,6 +17,9 @@ if sys.platform == "win32":
         pass
 
 from pydebug.core.tracer import PyTracer
+from pydebug.core.detector import ExecutionProfile, detect_execution_profile
+from pydebug.integrations.mcp import install_mcp_hooks
+from pydebug.integrations.fastapi import install_asgi_hooks
 from pydebug.server.app import serve_trace
 
 
@@ -154,16 +157,81 @@ def cmd_run(args: argparse.Namespace) -> None:
         is_test_file = target.name.startswith("test_") or target.name.endswith("_test.py")
 
         include_paths.extend([str(target), str(target.parent)])
-        print(f"⚡ [PyDebug] Tracing {target.name} ...")
-        tracer = PyTracer(include_paths=include_paths, exclude_prefixes=cli_excludes)
-        syncer = LiveSessionSync(tracer, port=args.port, title=f"Script: {target.name}")
+        mode = getattr(args, "mode", "auto")
+        profile = (
+            detect_execution_profile(target)
+            if mode == "auto"
+            else (ExecutionProfile.SERVER_DAEMON if mode == "server" else (ExecutionProfile.BATCH_RUNNER if mode == "runner" else ExecutionProfile.STANDALONE_SCRIPT))
+        )
+
+        # In server/daemon mode, auto-install MCP tool hooks and ASGI endpoint middleware
+        if profile == ExecutionProfile.SERVER_DAEMON:
+            print(f"⚡ [PyDebug] Server/daemon entrypoint detected: {target.name}")
+            print(f"⚡ [PyDebug] Activating autonomous MCP tool & ASGI transaction interceptors (port {args.port})...")
+            install_mcp_hooks(server_port=args.port)
+            install_asgi_hooks(server_port=args.port)
+
+        tracer = PyTracer(
+            include_paths=include_paths,
+            exclude_prefixes=cli_excludes,
+            max_events=15000,
+        )
+        title_prefix = "[Server Startup] " if profile == ExecutionProfile.SERVER_DAEMON else ("Test Run: " if is_test_file else "Script: ")
+        syncer = LiveSessionSync(tracer, port=args.port, title=f"{title_prefix}{target.name}")
         syncer.start()
         tracer.start()
+
+        def _detach_startup_tracer() -> None:
+            if getattr(tracer, "_active", False):
+                try:
+                    syncer.stop()
+                except Exception:
+                    pass
+                startup_sess = tracer.stop()
+                startup_sess.title = f"[Server Startup] {target.name}"
+                startup_sess.stats["tag"] = "Server Startup"
+                startup_sess.compute_stats()
+                try:
+                    s_data = json.dumps(startup_sess.to_dict()).encode("utf-8")
+                    req = urllib.request.Request(
+                        f"http://127.0.0.1:{args.port}/api/sessions",
+                        data=s_data,
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=5.0):
+                        pass
+                except Exception:
+                    pass
+                print(f"✨ [PyDebug] Server startup completed ({len(startup_sess.events)} events). Continuous tracer detached; tool & API interceptors listening on port {args.port}.")
+
+        if profile == ExecutionProfile.SERVER_DAEMON:
+            try:
+                import uvicorn
+                orig_serve = uvicorn.Server.serve
+                async def patched_uvicorn_serve(self_srv: Any, *s_args: Any, **s_kwargs: Any) -> Any:
+                    _detach_startup_tracer()
+                    return await orig_serve(self_srv, *s_args, **s_kwargs)
+                uvicorn.Server.serve = patched_uvicorn_serve  # type: ignore[method-assign]
+            except Exception:
+                pass
+
+            try:
+                from mcp.server import MCPServer
+                orig_mcp_run = getattr(MCPServer, "run", None)
+                if orig_mcp_run:
+                    def patched_mcpserver_run(self_m: Any, *m_args: Any, **m_kwargs: Any) -> Any:
+                        _detach_startup_tracer()
+                        return orig_mcp_run(self_m, *m_args, **m_kwargs)
+                    MCPServer.run = patched_mcpserver_run  # type: ignore[method-assign]
+            except Exception:
+                pass
+
+        print(f"⚡ [PyDebug] Tracing {target.name} ...")
         sys.argv = [str(target), *args.script_args]
         try:
             if is_test_file:
                 import pytest
-
                 print(f"✨ [PyDebug] Detected pytest test file - running {target.name} through pytest.main() ...")
                 pytest.main([str(target), "-v", "-s", *args.script_args])
             else:
@@ -171,8 +239,10 @@ def cmd_run(args: argparse.Namespace) -> None:
         finally:
             syncer.stop()
             session = tracer.stop()
-            prefix = "Test Run: " if is_test_file else "Script: "
+            prefix = "[Server Startup] " if profile == ExecutionProfile.SERVER_DAEMON else ("Test Run: " if is_test_file else "Script: ")
             session.title = f"{prefix}{target.name}"
+            if profile == ExecutionProfile.SERVER_DAEMON:
+                session.stats["tag"] = "Server Startup"
             session.compute_stats()
 
     print(f"✨ [PyDebug] Execution finished: {len(session.events)} events recorded.")
@@ -254,6 +324,12 @@ def main() -> None:
     p_run = subparsers.add_parser("run", help="Run and debug a Python script or module")
     p_run.add_argument("file", help="Python script file or module name to trace and debug")
     p_run.add_argument("-m", "--module", action="store_true", help="Run library module as a script")
+    p_run.add_argument(
+        "--mode",
+        choices=["auto", "server", "runner", "script"],
+        default="auto",
+        help="Execution mode (auto: detect servers & runners; server: daemon mode with tool hooks; runner: batch runner; script: standalone script)",
+    )
     p_run.add_argument("--port", type=int, default=8899, help="UI port (default: 8899)")
     p_run.add_argument("--no-ui", action="store_true", help="Capture trace without launching browser UI")
     p_run.add_argument("--no-open", action="store_true", help="Do not automatically open browser")

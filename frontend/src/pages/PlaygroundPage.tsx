@@ -20,8 +20,11 @@ import {
   Sliders,
   WrapText,
   X,
+  PlayCircle,
+  FileCode2,
+  GitFork,
 } from 'lucide-react';
-import type { TraceSession, FunctionSignature, LogEntry } from '../types';
+import type { TraceSession, FunctionSignature, LogEntry, FunctionInspectionResponse } from '../types';
 
 interface PlaygroundPageProps {
   session: TraceSession;
@@ -71,7 +74,13 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
     duration_ms?: number;
   } | null>(null);
 
-  const [outputTab, setOutputTab] = useState<'result' | 'logs'>('result');
+  const [outputTab, setOutputTab] = useState<'result' | 'logs' | 'references'>('result');
+  const [inspectionData, setInspectionData] = useState<FunctionInspectionResponse | null>(null);
+  const [isLoadingInspection, setIsLoadingInspection] = useState<boolean>(false);
+  const [refSearchQuery, setRefSearchQuery] = useState<string>('');
+  const [refSubTab, setRefSubTab] = useState<'references' | 'implementation'>('references');
+  const [copiedCode, setCopiedCode] = useState<boolean>(false);
+  const [copiedRefLine, setCopiedRefLine] = useState<number | null>(null);
   const [logSearchQuery, setLogSearchQuery] = useState<string>('');
   const [logLevelFilter, setLogLevelFilter] = useState<'ALL' | 'INFO' | 'WARN' | 'ERROR' | 'STDOUT'>('ALL');
   const [copiedLogs, setCopiedLogs] = useState<boolean>(false);
@@ -179,6 +188,58 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
         fn.params.some((p) => p.name.toLowerCase().includes(q))
     );
   }, [functions, modalSearchQuery]);
+
+  // Fetch source code implementation and workspace callers whenever selected function changes
+  useEffect(() => {
+    if (!selectedFunc) {
+      setInspectionData(null);
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoadingInspection(true);
+
+    const fetchInspection = async () => {
+      try {
+        const url = `/api/function-inspection?file_path=${encodeURIComponent(selectedFunc.file_path)}&func_name=${encodeURIComponent(selectedFunc.name)}`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const data: FunctionInspectionResponse = await res.json();
+          if (isMounted) {
+            setInspectionData(data);
+            if (data.references && data.references.length > 0) {
+              setRefSubTab('references');
+            } else {
+              setRefSubTab('implementation');
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load function inspection:', err);
+      } finally {
+        if (isMounted) {
+          setIsLoadingInspection(false);
+        }
+      }
+    };
+
+    fetchInspection();
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedFunc?.file_path, selectedFunc?.name]);
+
+  const filteredReferences = useMemo(() => {
+    if (!inspectionData?.references) return [];
+    if (!refSearchQuery.trim()) return inspectionData.references;
+    const q = refSearchQuery.toLowerCase();
+    return inspectionData.references.filter(
+      (r) =>
+        r.rel_path.toLowerCase().includes(q) ||
+        r.caller_context.toLowerCase().includes(q) ||
+        r.snippet.toLowerCase().includes(q)
+    );
+  }, [inspectionData, refSearchQuery]);
 
   const handleSelectFunction = (func: FunctionSignature) => {
     activeFuncRef.current = func;
@@ -418,7 +479,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
           </div>
 
           {/* Invocation Studio Body */}
-          <div className="flex-1 flex flex-col p-5 overflow-y-auto space-y-5">
+          <div className="flex-1 flex flex-col p-5 pb-20 overflow-y-auto space-y-5">
             {/* 1. Live Python Call Expression Bar */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -563,6 +624,22 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                   <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
                 )}
               </button>
+              <button
+                onClick={() => setOutputTab('references')}
+                className={`px-3 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+                  outputTab === 'references'
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <Code2 className="w-3.5 h-3.5 text-blue-500" />
+                <span>References & Code</span>
+                {inspectionData?.references && inspectionData.references.length > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-500/15 text-blue-600 dark:text-blue-400 font-mono font-bold">
+                    {inspectionData.references.length}
+                  </span>
+                )}
+              </button>
             </div>
 
             {lastResult?.duration_ms && (
@@ -597,16 +674,41 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                 {/* Result Status Card */}
                 {lastResult.success ? (
                   <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-xs shrink-0">
-                    <div className="flex items-center gap-2 font-bold text-sm">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                      <span>Execution Succeeded (200 OK)</span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-bold text-sm">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        <span>Execution Succeeded (200 OK)</span>
+                      </div>
+                      <span className="text-[11px] font-mono text-emerald-600/80 dark:text-emerald-400/80">
+                        {lastResult.duration_ms?.toFixed(1)} ms
+                      </span>
                     </div>
+
                     <div className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80 mt-1.5 flex items-center gap-2">
                       <span>{lastResult.events_count} events recorded</span>
                       <span>•</span>
                       <span>{lastResult.logs.length} logs captured</span>
-                      <span>•</span>
-                      <span>{lastResult.duration_ms?.toFixed(1)} ms</span>
+                    </div>
+
+                    {/* Quick Action Navigation Bar */}
+                    <div className="mt-3.5 pt-3 border-t border-emerald-500/20 flex items-center gap-2">
+                      <button
+                        onClick={onNavigateToHunter}
+                        className="flex-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+                        title="Step through all recorded events and variables in Timeline Replay"
+                      >
+                        <PlayCircle className="w-3.5 h-3.5" />
+                        <span>View in Timeline Replay</span>
+                        <ArrowRight className="w-3 h-3 ml-0.5 opacity-80" />
+                      </button>
+                      <button
+                        onClick={() => setOutputTab('logs')}
+                        className="py-2 px-3 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 font-medium text-xs flex items-center gap-1.5 border border-emerald-500/30 transition-colors cursor-pointer"
+                        title="Inspect execution logs"
+                      >
+                        <Terminal className="w-3.5 h-3.5" />
+                        <span>View Logs ({lastResult.logs.length})</span>
+                      </button>
                     </div>
                   </div>
                 ) : (
@@ -630,13 +732,24 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                       </div>
                     )}
 
-                    <button
-                      onClick={onNavigateToHunter}
-                      className="mt-3.5 w-full py-2.5 px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
-                    >
-                      <span>🎯 Inspect Failure Line in Timeline</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="mt-3.5 flex items-center gap-2">
+                      <button
+                        onClick={onNavigateToHunter}
+                        className="flex-1 py-2.5 px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+                      >
+                        <span>🎯 Inspect Failure Line in Timeline</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                      {lastResult.logs.length > 0 && (
+                        <button
+                          onClick={() => setOutputTab('logs')}
+                          className="py-2.5 px-3 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-700 dark:text-rose-300 font-medium text-xs flex items-center gap-1.5 border border-rose-500/30 transition-colors cursor-pointer"
+                        >
+                          <Terminal className="w-3.5 h-3.5" />
+                          <span>Logs ({lastResult.logs.length})</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -807,6 +920,183 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                     })
                   )}
                 </div>
+              </div>
+            )}
+
+            {outputTab === 'references' && (
+              <div className="flex-1 flex flex-col overflow-hidden p-5">
+                {isLoadingInspection ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-8 text-blue-500">
+                    <Activity className="w-8 h-8 animate-spin mb-3" />
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Scanning Workspace Call Sites...</p>
+                    <p className="text-xs text-slate-400 mt-1">Analyzing AST invocations across user python files</p>
+                  </div>
+                ) : !selectedFunc ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-8 text-slate-400">
+                    <Code2 className="w-10 h-10 text-slate-300 dark:text-slate-700 mb-3" />
+                    <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">No Function Selected</p>
+                    <p className="text-xs text-slate-400 mt-1">Select a function to inspect its source and call sites</p>
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col min-h-0 space-y-3.5">
+                    {/* Sub-tab segmented bar */}
+                    <div className="flex items-center justify-between pb-1 border-b border-slate-200 dark:border-slate-800">
+                      <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg text-xs font-semibold">
+                        <button
+                          onClick={() => setRefSubTab('references')}
+                          className={`px-3 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+                            refSubTab === 'references'
+                              ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
+                              : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                          }`}
+                        >
+                          <GitFork className="w-3.5 h-3.5 text-blue-500" />
+                          <span>Callers & Usages</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-500/15 text-blue-600 dark:text-blue-400 font-mono">
+                            {inspectionData?.references?.length || 0}
+                          </span>
+                        </button>
+                        <button
+                          onClick={() => setRefSubTab('implementation')}
+                          className={`px-3 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+                            refSubTab === 'implementation'
+                              ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
+                              : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                          }`}
+                        >
+                          <FileCode2 className="w-3.5 h-3.5 text-emerald-500" />
+                          <span>Source Implementation</span>
+                        </button>
+                      </div>
+
+                      {refSubTab === 'references' && inspectionData?.references && inspectionData.references.length > 3 && (
+                        <div className="relative w-44">
+                          <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="text"
+                            placeholder="Filter callers..."
+                            value={refSearchQuery}
+                            onChange={(e) => setRefSearchQuery(e.target.value)}
+                            className="w-full text-xs pl-7 pr-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-hidden focus:ring-1 focus:ring-blue-500 text-slate-800 dark:text-slate-200"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Content View */}
+                    {refSubTab === 'implementation' ? (
+                      <div className="flex-1 flex flex-col min-h-0 bg-slate-900 dark:bg-slate-950 rounded-xl border border-slate-800 overflow-hidden shadow-xs">
+                        {/* Header bar */}
+                        <div className="flex items-center justify-between px-3.5 py-2 bg-slate-800/80 border-b border-slate-700/60 text-xs font-mono text-slate-300 shrink-0">
+                          <div className="flex items-center gap-2 truncate">
+                            <span className="text-emerald-400 font-bold">
+                              {inspectionData?.implementation?.rel_path || selectedFunc.file_path.split(/[\\/]/).pop()}
+                            </span>
+                            {inspectionData?.implementation && (
+                              <span className="text-[11px] text-slate-400">
+                                :L{inspectionData.implementation.start_line}-L{inspectionData.implementation.end_line}
+                              </span>
+                            )}
+                            {inspectionData?.implementation?.is_async && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-purple-500/20 text-purple-300 font-semibold">
+                                async
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (inspectionData?.implementation?.code) {
+                                navigator.clipboard.writeText(inspectionData.implementation.code);
+                                setCopiedCode(true);
+                                setTimeout(() => setCopiedCode(false), 2000);
+                              }
+                            }}
+                            className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-700/50 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer text-xs"
+                            title="Copy full source implementation"
+                          >
+                            {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                            <span>{copiedCode ? 'Copied' : 'Copy Code'}</span>
+                          </button>
+                        </div>
+                        {/* Source Code text */}
+                        <div className="flex-1 overflow-auto p-4 font-mono text-xs text-slate-200 leading-relaxed whitespace-pre selection:bg-blue-500/30">
+                          {inspectionData?.implementation?.code || (
+                            <span className="text-slate-500 italic">No source code extracted for this function.</span>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      /* Callers & References View */
+                      <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+                        {filteredReferences.length === 0 ? (
+                          <div className="h-48 flex flex-col items-center justify-center text-center p-6 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-slate-400">
+                            <GitFork className="w-8 h-8 text-slate-300 dark:text-slate-700 mb-2" />
+                            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                              {refSearchQuery ? 'No callers matching filter' : 'No Callers Found in Workspace'}
+                            </p>
+                            <p className="text-[11px] text-slate-400 max-w-[280px] mt-1">
+                              {refSearchQuery
+                                ? 'Try clearing the caller search query above.'
+                                : 'This function might be an entrypoint, CLI command, or dynamically dispatched MCP tool.'}
+                            </p>
+                          </div>
+                        ) : (
+                          filteredReferences.map((ref, idx) => (
+                            <div
+                              key={`${ref.file_path}-${ref.line}-${idx}`}
+                              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-3 shadow-xs hover:border-blue-500/40 transition-colors"
+                            >
+                              <div className="flex items-center justify-between text-xs font-mono">
+                                <div className="flex items-center gap-2 truncate">
+                                  <FileCode className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                                  <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                                    {ref.rel_path}
+                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded-sm bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold text-[11px]">
+                                    :L{ref.line}
+                                  </span>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(`${ref.rel_path}:${ref.line}`);
+                                    setCopiedRefLine(ref.line);
+                                    setTimeout(() => setCopiedRefLine(null), 2000);
+                                  }}
+                                  className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer ml-2 shrink-0"
+                                  title="Copy path:line for IDE navigation"
+                                >
+                                  {copiedRefLine === ref.line ? (
+                                    <Check className="w-3 h-3 text-emerald-500" />
+                                  ) : (
+                                    <Copy className="w-3 h-3" />
+                                  )}
+                                  <span>{copiedRefLine === ref.line ? 'Copied' : 'Copy'}</span>
+                                </button>
+                              </div>
+
+                              <div className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                <span className="font-medium text-slate-600 dark:text-slate-300">Context:</span>
+                                <span className="font-mono text-indigo-600 dark:text-indigo-400 truncate">
+                                  {ref.caller_context}
+                                </span>
+                                {ref.is_internal && (
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                                    same file
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Snippet box */}
+                              <div className="mt-2.5 p-2.5 rounded-lg bg-slate-900 text-slate-200 font-mono text-[11px] overflow-x-auto whitespace-pre leading-relaxed border border-slate-800">
+                                {ref.snippet}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -303,6 +303,184 @@ def extract_function_signatures(file_path: str) -> list[dict[str, Any]]:
                     })
     return funcs
 
+def extract_function_implementation(file_path: str, func_name: str) -> dict[str, Any] | None:
+    """Extracts the exact Python source code, line numbers, and decorators for a function or class method."""
+    p = Path(file_path).resolve()
+    if not p.exists():
+        return None
+
+    try:
+        source = p.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+    except Exception:
+        return None
+
+    lines = source.splitlines()
+    target_node: ast.FunctionDef | ast.AsyncFunctionDef | None = None
+    target_class: str | None = None
+
+    if "." in func_name:
+        cls_name, method_name = func_name.split(".", 1)
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef) and node.name == cls_name:
+                for sub in node.body:
+                    if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)) and sub.name == method_name:
+                        target_node = sub
+                        target_class = cls_name
+                        break
+                if target_node:
+                    break
+    else:
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name:
+                target_node = node
+                break
+
+    if not target_node:
+        return None
+
+    start_line = target_node.lineno
+    end_line = getattr(target_node, "end_lineno", start_line)
+    if target_node.decorator_list:
+        dec_start = min(d.lineno for d in target_node.decorator_list)
+        start_line = min(start_line, dec_start)
+
+    # 1-based indexing in ast to 0-based list slicing
+    code_lines = lines[start_line - 1 : end_line]
+    code = "\n".join(code_lines)
+
+    try:
+        rel_path = str(p.relative_to(Path.cwd().resolve())).replace("\\", "/")
+    except ValueError:
+        rel_path = p.name
+
+    decorators: list[str] = []
+    for d in target_node.decorator_list:
+        try:
+            decorators.append(ast.unparse(d))
+        except Exception:
+            pass
+
+    return {
+        "file_path": str(p),
+        "rel_path": rel_path,
+        "name": func_name,
+        "start_line": start_line,
+        "end_line": end_line,
+        "code": code,
+        "is_async": isinstance(target_node, ast.AsyncFunctionDef),
+        "decorators": decorators,
+        "class_name": target_class,
+    }
+
+
+def find_function_references(func_name: str, target_file: str) -> list[dict[str, Any]]:
+    """Finds all workspace call sites where `func_name` is invoked across project files."""
+    short_name = func_name.split(".")[-1]
+    target_p = Path(target_file).resolve()
+    cwd = Path.cwd().resolve()
+
+    references: list[dict[str, Any]] = []
+    py_files = scan_project_python_files()
+
+    for pf in py_files:
+        try:
+            file_content = pf.read_text(encoding="utf-8")
+        except Exception:
+            continue
+
+        # Fast string pre-filter to skip irrelevant files in microseconds
+        if short_name not in file_content:
+            continue
+
+        lines = file_content.splitlines()
+
+        try:
+            tree = ast.parse(file_content, filename=str(pf))
+        except Exception:
+            # Fallback to regex line matching if AST fails on syntax quirks
+            import re
+            pattern = re.compile(r"\b" + re.escape(short_name) + r"\s*\(")
+            for idx, line in enumerate(lines, start=1):
+                if pattern.search(line):
+                    start_idx = max(0, idx - 2)
+                    end_idx = min(len(lines), idx + 2)
+                    snippet = "\n".join(f"{i+1:4d} | {lines[i]}" for i in range(start_idx, end_idx))
+                    try:
+                        rel = str(pf.relative_to(cwd)).replace("\\", "/")
+                    except ValueError:
+                        rel = pf.name
+                    references.append({
+                        "file_path": str(pf),
+                        "rel_path": rel,
+                        "line": idx,
+                        "caller_context": "<module>",
+                        "snippet": snippet,
+                        "is_internal": pf == target_p,
+                    })
+            continue
+
+        class CallVisitor(ast.NodeVisitor):
+            def __init__(self) -> None:
+                self.context_stack: list[str] = []
+
+            def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+                self.context_stack.append(f"{node.name}()")
+                self.generic_visit(node)
+                self.context_stack.pop()
+
+            def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+                self.context_stack.append(f"async {node.name}()")
+                self.generic_visit(node)
+                self.context_stack.pop()
+
+            def visit_ClassDef(self, node: ast.ClassDef) -> None:
+                self.context_stack.append(node.name)
+                self.generic_visit(node)
+                self.context_stack.pop()
+
+            def visit_Call(self, node: ast.Call) -> None:
+                is_match = False
+                if isinstance(node.func, ast.Name) and node.func.id == short_name:
+                    is_match = True
+                elif isinstance(node.func, ast.Attribute) and node.func.attr == short_name:
+                    is_match = True
+
+                if is_match:
+                    call_line = node.lineno
+                    caller_ctx = " -> ".join(self.context_stack) if self.context_stack else "<module>"
+
+                    start_idx = max(0, call_line - 3)
+                    end_idx = min(len(lines), call_line + 2)
+                    snippet_lines = []
+                    for i in range(start_idx, end_idx):
+                        prefix = " > " if (i + 1) == call_line else "   "
+                        snippet_lines.append(f"{prefix}{i+1:4d} | {lines[i]}")
+                    snippet = "\n".join(snippet_lines)
+
+                    try:
+                        rel = str(pf.relative_to(cwd)).replace("\\", "/")
+                    except ValueError:
+                        rel = pf.name
+
+                    references.append({
+                        "file_path": str(pf),
+                        "rel_path": rel,
+                        "line": call_line,
+                        "caller_context": caller_ctx,
+                        "snippet": snippet,
+                        "is_internal": pf == target_p,
+                    })
+
+                self.generic_visit(node)
+
+        visitor = CallVisitor()
+        visitor.visit(tree)
+
+    # Sort references: external callers first, then by rel_path and line number
+    references.sort(key=lambda r: (r["is_internal"], r["rel_path"], r["line"]))
+    return references
+
 
 class PyDebugHandler(BaseHTTPRequestHandler):
     """HTTP Request Handler serving PyDebug Studio, REST endpoints, and Ollama AI."""
@@ -324,6 +502,11 @@ class PyDebugHandler(BaseHTTPRequestHandler):
             self._serve_session(sess_id)
         elif path == "/api/functions":
             self._serve_functions()
+        elif path == "/api/function-inspection":
+            query = urllib.parse.parse_qs(parsed.query)
+            file_path = query.get("file_path", [None])[0]
+            func_name = query.get("func_name", [None])[0]
+            self._serve_function_inspection(file_path, func_name)
         elif path == "/api/stream":
             self._serve_sse_stream()
         elif path == "/api/ai/config":
@@ -468,6 +651,35 @@ class PyDebugHandler(BaseHTTPRequestHandler):
         body = json.dumps(discovered).encode("utf-8")
         cls._functions_cache = (time.time(), body)
         self._send_json(200, body)
+
+    def _serve_function_inspection(self, file_path: str | None, func_name: str | None) -> None:
+        """Inspects source implementation and caller sites across workspace for a given function."""
+        if not file_path or not func_name:
+            self._send_json(400, json.dumps({"error": "file_path and func_name parameters are required"}).encode("utf-8"))
+            return
+
+        p = Path(file_path).resolve()
+        if not p.exists():
+            self._send_json(404, json.dumps({"error": f"File {file_path} not found"}).encode("utf-8"))
+            return
+
+        impl = extract_function_implementation(file_path, func_name)
+        refs = find_function_references(func_name, file_path)
+
+        try:
+            rel = str(p.relative_to(Path.cwd().resolve())).replace("\\", "/")
+        except ValueError:
+            rel = p.name
+
+        resp = {
+            "func_name": func_name,
+            "file_path": str(p),
+            "rel_path": rel,
+            "implementation": impl,
+            "references": refs,
+            "total_references": len(refs),
+        }
+        self._send_json(200, json.dumps(resp).encode("utf-8"))
 
     def _read_json_body(self) -> dict[str, Any]:
         """Reads and parses the JSON request body (empty dict when no body)."""

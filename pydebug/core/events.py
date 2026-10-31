@@ -135,7 +135,8 @@ class TraceSession:
         return ev
 
     def compute_stats(self) -> None:
-        self.stats = {
+        existing = dict(self.stats) if isinstance(getattr(self, "stats", None), dict) else {}
+        computed = {
             "total_events": len(self.events),
             "files_count": len(self.files),
             "calls_count": sum(1 for e in self.events if e.kind == "call"),
@@ -148,6 +149,8 @@ class TraceSession:
             ),
             "logs_count": len(self.logs),
         }
+        existing.update(computed)
+        self.stats = existing
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TraceSession":

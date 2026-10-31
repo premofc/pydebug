@@ -23,7 +23,8 @@ import {
   Send,
   Trash2,
   Wrench,
-  AlertCircle
+  AlertCircle,
+  X
 } from 'lucide-react';
 
 interface AiChatMessage {
@@ -135,7 +136,7 @@ const MarkdownContent: React.FC<{ text: string }> = ({ text }) => {
           </div>
         );
       })}
-    </div>
+          </div>
   );
 };
 import type { TraceSession, TraceEvent, AiExplanation, AIProviderConfig } from '../types';
@@ -162,6 +163,8 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
   const [streamFilter, setStreamFilter] = useState<string>('');
   const [filterKind, setFilterKind] = useState<'all' | 'call' | 'line' | 'return'>('all');
   const [pinnedVars, setPinnedVars] = useState<string[]>([]);
+  const [showReturnModal, setShowReturnModal] = useState<boolean>(false);
+  const [expandedVarNames, setExpandedVarNames] = useState<Record<string, boolean>>({});
 
   // AI Co-Pilot State
   const [, setAiExplanation] = useState<AiExplanation | null>(null);
@@ -170,6 +173,39 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
   const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([]);
   const [aiChatInput, setAiChatInput] = useState<string>('');
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
+
+  // VS Code-style Resizable Split Pane & Expand/Collapse State
+  const [splitRatio, setSplitRatio] = useState<number>(55);
+  const [panelViewMode, setPanelViewMode] = useState<'split' | 'full-editor' | 'full-inspector'>('split');
+  const isDraggingSplitterRef = useRef(false);
+  const mainSplitterRef = useRef<HTMLDivElement>(null);
+
+  const handleSplitterMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingSplitterRef.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (!isDraggingSplitterRef.current || !mainSplitterRef.current) return;
+      const rect = mainSplitterRef.current.getBoundingClientRect();
+      const pct = ((moveEvent.clientX - rect.left) / rect.width) * 100;
+      if (pct >= 20 && pct <= 80) {
+        setSplitRatio(pct);
+      }
+    };
+
+    const onMouseUp = () => {
+      isDraggingSplitterRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
 
   const lineRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const currentEvent: TraceEvent | undefined = events[currentIdx];
@@ -617,132 +653,16 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors">
-      {/* 1. TOP TIMELINE PLAYER CONTROLS */}
-      <div className="h-16 px-4 bg-white dark:bg-[#090e1a]/90 border-b border-slate-200 dark:border-white/[0.08] flex items-center justify-between gap-4 select-none z-10 shrink-0">
-        {/* Play & Step Buttons */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleFirst}
-            disabled={currentIdx === 0}
-            className="p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 text-slate-600 dark:text-slate-400 transition-colors"
-            title="Jump to Start (First Event) [Home]"
-          >
-            <ChevronsLeft className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handlePrev}
-            disabled={currentIdx === 0}
-            className="p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 text-slate-600 dark:text-slate-400 transition-colors"
-            title="Step Backward (Previous Line) [← Left Arrow]"
-          >
-            <SkipBack className="w-4 h-4" />
-          </button>
-
-          <button
-            onClick={() => setIsPlaying((p) => !p)}
-            className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 font-medium text-xs text-white shadow-sm transition-all ${
-              isPlaying
-                ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/30'
-                : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'
-            }`}
-            title={isPlaying ? 'Pause Execution [Space]' : 'Play / Auto-Step Execution [Space]'}
-          >
-            {isPlaying ? (
-              <>
-                <Pause className="w-3.5 h-3.5 fill-current" />
-                <span>Pause</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Play</span>
-              </>
-            )}
-          </button>
-
-          <button
-            onClick={handleNext}
-            disabled={currentIdx >= events.length - 1}
-            className="p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 text-slate-600 dark:text-slate-400 transition-colors"
-            title="Step Forward (Next Line) [→ Right Arrow]"
-          >
-            <SkipForward className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleLast}
-            disabled={currentIdx >= events.length - 1}
-            className="p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 text-slate-600 dark:text-slate-400 transition-colors"
-            title="Jump to End (Final Event) [End]"
-          >
-            <ChevronsRight className="w-4 h-4" />
-          </button>
-
-          <div className="h-5 w-[1px] bg-slate-200 dark:bg-slate-800 mx-1" />
-
-          {/* Speed Selector */}
-          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-0.5 rounded-md border border-slate-200 dark:border-white/[0.08] text-[11px] font-mono">
-            {[0.5, 1, 2, 4].map((spd) => (
-              <button
-                key={spd}
-                onClick={() => setPlaybackSpeed(spd)}
-                className={`px-1.5 py-0.5 rounded transition-colors ${
-                  playbackSpeed === spd
-                    ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white shadow-xs font-semibold'
-                    : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
-                }`}
-              >
-                {spd}x
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Center: Timeline Scrubber Bar */}
-        <div className="flex-1 max-w-2xl flex items-center gap-3">
-          <input
-            type="range"
-            min={0}
-            max={Math.max(0, events.length - 1)}
-            value={currentIdx}
-            onChange={handleScrubberChange}
-            className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600 dark:accent-indigo-500"
-          />
-          <div className="flex items-center gap-1.5 text-xs font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap">
-            <span className="font-semibold text-slate-900 dark:text-slate-100">
-              #{currentIdx + 1}
-            </span>
-            <span>/</span>
-            <span>{events.length}</span>
-            <span className="text-[10px] text-slate-400">
-              ({events.length ? Math.round(((currentIdx + 1) / events.length) * 100) : 0}%)
-            </span>
-          </div>
-        </div>
-
-        {/* Right: Current Event Details Badge */}
-        {currentEvent && (
-          <div className="hidden lg:flex items-center gap-2">
-            <span
-              className={`px-2 py-0.5 rounded text-[11px] font-mono font-medium border uppercase tracking-wider ${getKindBadge(
-                currentEvent.kind
-              )}`}
-            >
-              {currentEvent.kind}
-            </span>
-            <span className="text-xs font-mono font-medium text-slate-800 dark:text-slate-200">
-              {currentEvent.func}()
-            </span>
-            <span className="text-xs font-mono text-slate-400">
-              :L{currentEvent.line}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* 2. MAIN 2-PANEL LAYOUT */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* 1. MAIN 2-PANEL RESIZABLE LAYOUT */}
+      <div ref={mainSplitterRef} className="flex-1 flex overflow-hidden relative">
         {/* LEFT PANEL: SOURCE CODE VIEWER WITH LIVE POINTER & INLINE VARIABLES */}
-        <div className="flex-1 flex flex-col border-r border-slate-200 dark:border-white/[0.08] overflow-hidden bg-white dark:bg-[#060911]">
+        <div 
+          className="flex flex-col border-r border-slate-200 dark:border-white/[0.08] overflow-hidden bg-white dark:bg-[#060911] transition-all"
+          style={{ 
+            width: panelViewMode === 'full-inspector' ? '0%' : panelViewMode === 'full-editor' ? '100%' : `${splitRatio}%`,
+            display: panelViewMode === 'full-inspector' ? 'none' : 'flex' 
+          }}
+        >
           {/* File Header Tab */}
           <div className="h-9 px-4 bg-slate-100/70 dark:bg-[#090e1a]/90 backdrop-blur-md border-b border-slate-200 dark:border-white/[0.08] flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 font-mono select-none">
             <div className="flex items-center gap-2">
@@ -753,12 +673,33 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
               </span>
             </div>
 
-            {currentEvent?.return_val && (
-              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[11px]">
-                <span>Returned:</span>
-                <span className="font-semibold">{currentEvent.return_val}</span>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              {currentEvent?.return_val && (
+                <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/25 text-emerald-600 dark:text-emerald-400 text-[11px] max-w-[280px] lg:max-w-[420px] overflow-hidden shrink-0 shadow-2xs">
+                  <span className="font-bold uppercase tracking-wider text-[10px] shrink-0 text-emerald-700 dark:text-emerald-300">Returned:</span>
+                  <span className="font-mono font-semibold truncate whitespace-nowrap min-w-0" title={currentEvent.return_val}>
+                    {currentEvent.return_val}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowReturnModal(true)}
+                    className="px-1.5 py-0.2 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold shrink-0 transition-colors cursor-pointer"
+                    title="Expand full return value"
+                  >
+                    Expand
+                  </button>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setPanelViewMode(m => m === 'full-editor' ? 'split' : 'full-editor')}
+                className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                title={panelViewMode === 'full-editor' ? 'Restore Split View' : 'Maximize Editor (Full Width)'}
+              >
+                {panelViewMode === 'full-editor' ? '◨' : '⤢'}
+              </button>
+            </div>
           </div>
 
           {/* Exception Banner */}
@@ -923,8 +864,23 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
 
         </div>
 
+        {/* DRAGGABLE RESIZER SPLITTER (VS CODE STYLE) */}
+        {panelViewMode === 'split' && (
+          <div
+            onMouseDown={handleSplitterMouseDown}
+            className="resizer-h"
+            title="Drag to resize Editor vs Inspector"
+          />
+        )}
+
         {/* RIGHT PANEL: RICH VARIABLE INSPECTOR & AI CO-PILOT DOCK */}
-        <div className="w-[460px] flex flex-col bg-slate-50/70 dark:bg-[#090e1a]/90 backdrop-blur-md overflow-hidden select-none shrink-0 border-l border-slate-200 dark:border-white/[0.08]">
+        <div 
+          className="flex flex-col bg-slate-50/70 dark:bg-[#090e1a]/90 backdrop-blur-md overflow-hidden select-none shrink-0 border-l border-slate-200 dark:border-white/[0.08] transition-all"
+          style={{ 
+            width: panelViewMode === 'full-editor' ? '0%' : panelViewMode === 'full-inspector' ? '100%' : `${100 - splitRatio}%`,
+            display: panelViewMode === 'full-editor' ? 'none' : 'flex' 
+          }}
+        >
           {/* Top Sub-tabs Selector */}
           <div className="h-10 px-3 bg-white dark:bg-[#060911] border-b border-slate-200 dark:border-white/[0.08] flex items-center justify-between gap-1 shrink-0">
             <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200 dark:border-white/[0.08] text-xs font-medium">
@@ -979,6 +935,15 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
                 <span>AI Co-Pilot</span>
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setPanelViewMode(m => m === 'full-inspector' ? 'split' : 'full-inspector')}
+              className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title={panelViewMode === 'full-inspector' ? 'Restore Split View' : 'Maximize Inspector (Full Width)'}
+            >
+              {panelViewMode === 'full-inspector' ? '◨' : '⤢'}
+            </button>
           </div>
 
           {/* TAB 1: VARIABLES & LOCALS */}
@@ -1075,9 +1040,18 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
                           </div>
                         </div>
 
-                        <div className="font-mono text-xs text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-950 p-2 rounded border border-slate-100 dark:border-white/[0.08]/60 overflow-x-auto whitespace-pre-wrap break-all select-text max-h-32">
+                        <div className={`font-mono text-xs text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-950 p-2 rounded border border-slate-100 dark:border-white/[0.08]/60 overflow-x-auto whitespace-pre-wrap break-all select-text transition-all ${expandedVarNames[name] ? 'max-h-[500px]' : 'max-h-32'}`}>
                           {val}
                         </div>
+                        {val.length > 90 && (
+                          <button
+                            type="button"
+                            onClick={() => setExpandedVarNames(prev => ({ ...prev, [name]: !prev[name] }))}
+                            className="mt-1 text-[10px] font-semibold text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer inline-flex items-center gap-1"
+                          >
+                            {expandedVarNames[name] ? '▲ Collapse view' : '▼ Expand full object details'}
+                          </button>
+                        )}
                       </div>
                     );
                   })
@@ -1609,6 +1583,174 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
           )}
         </div>
       </div>
+
+      {/* 2. BOTTOM TIMELINE PLAYER CONTROLS (Floating VCR Scrubber) */}
+      <div className="mx-4 my-2.5 px-4 py-2 rounded-2xl glass-panel shadow-lg flex items-center justify-between gap-4 select-none shrink-0 z-10 border border-slate-200/80 dark:border-white/[0.08]">
+        {/* Play & Step Buttons */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={handleFirst}
+            disabled={currentIdx === 0}
+            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 text-slate-600 dark:text-slate-400 transition-colors cursor-pointer"
+            title="Jump to Start (First Event) [Home]"
+          >
+            <ChevronsLeft className="w-4 h-4" />
+          </button>
+          <button
+            onClick={handlePrev}
+            disabled={currentIdx === 0}
+            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 text-slate-600 dark:text-slate-400 transition-colors cursor-pointer"
+            title="Step Backward (Previous Line) [← Left Arrow]"
+          >
+            <SkipBack className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => setIsPlaying((p) => !p)}
+            className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 font-semibold text-xs text-white shadow-sm transition-all cursor-pointer ${
+              isPlaying
+                ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/30'
+                : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'
+            }`}
+            title={isPlaying ? 'Pause Execution [Space]' : 'Play / Auto-Step Execution [Space]'}
+          >
+            {isPlaying ? (
+              <>
+                <Pause className="w-3.5 h-3.5 fill-current" />
+                <span>Pause</span>
+              </>
+            ) : (
+              <>
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>Play</span>
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={handleNext}
+            disabled={currentIdx >= events.length - 1}
+            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 text-slate-600 dark:text-slate-400 transition-colors cursor-pointer"
+            title="Step Forward (Next Line) [→ Right Arrow]"
+          >
+            <SkipForward className="w-4 h-4" />
+          </button>
+          <button
+            onClick={handleLast}
+            disabled={currentIdx >= events.length - 1}
+            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 text-slate-600 dark:text-slate-400 transition-colors cursor-pointer"
+            title="Jump to End (Final Event) [End]"
+          >
+            <ChevronsRight className="w-4 h-4" />
+          </button>
+
+          <div className="h-5 w-[1px] bg-slate-200 dark:bg-slate-800 mx-1" />
+
+          {/* Speed Selector */}
+          <div className="flex items-center gap-1 bg-slate-100/90 dark:bg-[#050811] p-0.5 rounded-lg border border-slate-200/80 dark:border-white/[0.08] text-[11px] font-mono">
+            {[0.5, 1, 2, 4].map((spd) => (
+              <button
+                key={spd}
+                onClick={() => setPlaybackSpeed(spd)}
+                className={`px-2 py-0.5 rounded-md transition-colors cursor-pointer ${
+                  playbackSpeed === spd
+                    ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white shadow-xs font-semibold'
+                    : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                {spd}x
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Center: Timeline Scrubber Bar */}
+        <div className="flex-1 max-w-2xl flex items-center gap-3">
+          <input
+            type="range"
+            min={0}
+            max={Math.max(0, events.length - 1)}
+            value={currentIdx}
+            onChange={handleScrubberChange}
+            className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600 dark:accent-indigo-500"
+          />
+          <div className="flex items-center gap-1.5 text-xs font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap">
+            <span className="font-semibold text-slate-900 dark:text-slate-100">
+              #{currentIdx + 1}
+            </span>
+            <span>/</span>
+            <span>{events.length}</span>
+            <span className="text-[10px] text-slate-400">
+              ({events.length ? Math.round(((currentIdx + 1) / events.length) * 100) : 0}%)
+            </span>
+          </div>
+        </div>
+
+        {/* Right: Current Event Details Badge */}
+        {currentEvent && (
+          <div className="hidden lg:flex items-center gap-2 shrink-0">
+            <span
+              className={`px-2 py-0.5 rounded text-[11px] font-mono font-medium border uppercase tracking-wider ${getKindBadge(
+                currentEvent.kind
+              )}`}
+            >
+              {currentEvent.kind}
+            </span>
+            <span className="text-xs font-mono font-medium text-slate-800 dark:text-slate-200">
+              {currentEvent.func}()
+            </span>
+            <span className="text-xs font-mono text-slate-400">
+              :L{currentEvent.line}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Return Value Full Modal */}
+      {showReturnModal && currentEvent?.return_val && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl bg-white dark:bg-[#0c1222] border border-slate-200 dark:border-white/[0.1] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-150">
+            <div className="px-5 py-3.5 border-b border-slate-200 dark:border-white/[0.08] flex items-center justify-between bg-slate-50 dark:bg-slate-900/50">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">Function Return Value</h3>
+                <span className="text-xs font-mono text-slate-400">({currentEvent.func}())</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(currentEvent.return_val || '');
+                  }}
+                  className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Copy className="w-3.5 h-3.5" /> Copy
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowReturnModal(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1 font-mono text-xs bg-slate-50/50 dark:bg-[#060911] text-slate-800 dark:text-slate-200 whitespace-pre-wrap select-text leading-relaxed">
+              {currentEvent.return_val}
+            </div>
+            <div className="px-5 py-2.5 border-t border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center text-xs text-slate-400 font-mono">
+              <span>Length: {currentEvent.return_val.length} chars</span>
+              <button
+                type="button"
+                onClick={() => setShowReturnModal(false)}
+                className="px-3 py-1 rounded-lg bg-indigo-600 text-white font-semibold text-xs cursor-pointer hover:bg-indigo-500"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

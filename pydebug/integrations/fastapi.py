@@ -120,3 +120,33 @@ class PyDebugMiddleware:
         except Exception:
             # Studio server might not be running or is on a different port, fail silently
             pass
+
+
+_ASGI_INSTALLED = False
+
+
+def install_asgi_hooks(server_port: int = 8899) -> bool:
+    """Auto-patches Starlette/FastAPI so PyDebugMiddleware is active on all apps."""
+    global _ASGI_INSTALLED
+    if _ASGI_INSTALLED:
+        return True
+
+    try:
+        from starlette.applications import Starlette
+
+        orig_build = Starlette.build_middleware_stack
+
+        def patched_build(self: Any) -> Any:
+            has_mw = any(
+                getattr(m, "cls", None) is PyDebugMiddleware or m is PyDebugMiddleware
+                for m in getattr(self, "user_middleware", [])
+            )
+            if not has_mw:
+                self.add_middleware(PyDebugMiddleware, server_port=server_port)
+            return orig_build(self)
+
+        Starlette.build_middleware_stack = patched_build  # type: ignore[method-assign]
+        _ASGI_INSTALLED = True
+        return True
+    except ImportError:
+        return False

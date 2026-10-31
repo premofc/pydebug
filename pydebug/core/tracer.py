@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import collections.abc as cabc
+import dataclasses
 import functools
 import inspect
 import linecache
@@ -22,11 +23,107 @@ from pydebug.core.events import TraceSession
 _ADDR_RE = re.compile(r"^<[\w.]+ object at 0x[0-9a-fA-F]+>$")
 
 
-def safe_repr(v: Any, _depth: int = 0) -> str:
-    """Recursively formats Python objects into readable, bounded strings for UI display."""
+def _unpack_custom_object(v: Any, _depth: int, _seen: set[int]) -> str | None:
+    """Introspects and extracts meaningful fields from custom objects (SQLAlchemy, Pydantic, dataclasses)."""
+    cls = type(v)
+    cls_name = cls.__name__
+
+    # 1. Pydantic v2 / v1
+    if hasattr(v, "model_dump") and callable(v.model_dump):
+        try:
+            dump = v.model_dump()
+            if isinstance(dump, dict):
+                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:60]}" for k, val in list(dump.items())[:12])
+                tail = ", ..." if len(dump) > 12 else ""
+                return f"{cls_name}({inner}{tail})"
+        except Exception:
+            pass
+    elif hasattr(v, "dict") and callable(v.dict) and not isinstance(v, type):
+        try:
+            dump = v.dict()
+            if isinstance(dump, dict):
+                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:60]}" for k, val in list(dump.items())[:12])
+                tail = ", ..." if len(dump) > 12 else ""
+                return f"{cls_name}({inner}{tail})"
+        except Exception:
+            pass
+
+    # 2. Dataclasses
+    if dataclasses.is_dataclass(v) and not isinstance(v, type):
+        try:
+            dump = dataclasses.asdict(v)
+            if isinstance(dump, dict):
+                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:60]}" for k, val in list(dump.items())[:12])
+                tail = ", ..." if len(dump) > 12 else ""
+                return f"{cls_name}({inner}{tail})"
+        except Exception:
+            pass
+
+    # 3. Namedtuples
+    if hasattr(v, "_asdict") and callable(v._asdict):
+        try:
+            dump = v._asdict()
+            if isinstance(dump, dict):
+                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:60]}" for k, val in list(dump.items())[:12])
+                tail = ", ..." if len(dump) > 12 else ""
+                return f"{cls_name}({inner}{tail})"
+        except Exception:
+            pass
+
+    # 4. SQLAlchemy ORM models and standard classes with __dict__
+    if hasattr(v, "__dict__") and not isinstance(v, type):
+        try:
+            clean_attrs = {k: val for k, val in v.__dict__.items() if not k.startswith("_")}
+            if clean_attrs:
+                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:60]}" for k, val in list(clean_attrs.items())[:12])
+                tail = ", ..." if len(clean_attrs) > 12 else ""
+                return f"{cls_name}({inner}{tail})"
+        except Exception:
+            pass
+
+    # 5. Classes with __slots__
+    if hasattr(v, "__slots__") and not isinstance(v, type):
+        try:
+            slots = [v.__slots__] if isinstance(v.__slots__, str) else v.__slots__
+            clean_attrs = {s: getattr(v, s) for s in slots if hasattr(v, s) and not s.startswith("_")}
+            if clean_attrs:
+                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:60]}" for k, val in list(clean_attrs.items())[:12])
+                tail = ", ..." if len(clean_attrs) > 12 else ""
+                return f"{cls_name}({inner}{tail})"
+        except Exception:
+            pass
+
+    return None
+
+
+def safe_repr(v: Any, _depth: int = 0, _seen: set[int] | None = None) -> str:
+    """Recursively formats Python objects into readable, bounded strings for UI display.
+    
+    Unpacks SQLAlchemy ORM models, Pydantic instances, dataclasses, and custom objects
+    so developers see actual attribute values instead of opaque memory addresses.
+    """
     try:
+        if _seen is None:
+            _seen = set()
+
+        # Primitive / scalar types return fast repr
+        if isinstance(v, (int, float, bool, str, bytes, type(None))):
+            r = repr(v)
+            return r if len(r) <= 240 else r[:237] + "..."
+
+        vid = id(v)
+        if vid in _seen:
+            return f"<{type(v).__name__} ...>"
+        _seen.add(vid)
+
+        # If namedtuple subclass of tuple, prefer custom object unpacking
+        if hasattr(v, "_fields") and isinstance(v, tuple) and type(v) is not tuple:
+            unpacked = _unpack_custom_object(v, _depth, _seen)
+            if unpacked is not None:
+                return unpacked if len(unpacked) <= 240 else unpacked[:237] + "..."
+
         if _depth < 3 and isinstance(v, (list, tuple, set, frozenset)):
-            inner = ", ".join(safe_repr(x, _depth + 1)[:80] for x in list(v)[:20])
+            inner = ", ".join(safe_repr(x, _depth + 1, _seen)[:80] for x in list(v)[:20])
             tail = ", ..." if len(v) > 20 else ""
             if isinstance(v, list):
                 return f"[{inner}{tail}]"
@@ -36,7 +133,7 @@ def safe_repr(v: Any, _depth: int = 0) -> str:
                 return f"{{{inner}{tail}}}"
         elif _depth < 3 and isinstance(v, dict):
             inner = ", ".join(
-                f"{safe_repr(k, _depth + 1)[:40]}: {safe_repr(val, _depth + 1)[:80]}"
+                f"{safe_repr(k, _depth + 1, _seen)[:40]}: {safe_repr(val, _depth + 1, _seen)[:80]}"
                 for k, val in list(v.items())[:20]
             )
             return "{" + inner + (", ..." if len(v) > 20 else "") + "}"
@@ -45,7 +142,7 @@ def safe_repr(v: Any, _depth: int = 0) -> str:
                 if v.done():
                     if hasattr(v, "cancelled") and v.cancelled():
                         return "<Future cancelled>"
-                    return safe_repr(v.result(), _depth + 1)
+                    return safe_repr(v.result(), _depth + 1, _seen)
                 else:
                     return "(awaiting)"
             except Exception as e:
@@ -53,14 +150,19 @@ def safe_repr(v: Any, _depth: int = 0) -> str:
         elif inspect.iscoroutine(v):
             return f"<coroutine {getattr(v, '__name__', 'coro')}>"
         else:
+            if _depth < 3:
+                unpacked = _unpack_custom_object(v, _depth, _seen)
+                if unpacked is not None:
+                    return unpacked if len(unpacked) <= 240 else unpacked[:237] + "..."
+
             r = repr(v)
             if _depth < 2 and _ADDR_RE.match(r):
                 if type(v).__str__ is not object.__str__:
                     return str(v)
+                return f"{type(v).__name__}()"
             return r if len(r) <= 240 else r[:237] + "..."
     except Exception:
         return "<unprintable>"
-
 
 _INTERNAL_CORE = str(Path(__file__).resolve().parent)
 _INTERNAL_ROOT = str(Path(__file__).resolve().parents[1])
@@ -76,6 +178,8 @@ class PyTracer:
         exclude_prefixes: list[str] | None = None,
         predicate: Any | None = None,
         max_depth: int = 50,
+        max_events: int = 15000,
+        on_session_roll: Callable[[TraceSession], None] | None = None,
     ) -> None:
         self.session = session or TraceSession()
         self.include_paths = [os.path.abspath(p) for p in (include_paths or [])]
@@ -90,6 +194,10 @@ class PyTracer:
         ]
         self.predicate = predicate
         self.max_depth = max_depth
+        self.max_events = max_events
+        self.on_session_roll = on_session_roll
+        self._session_slice = 1
+        self._base_title = self.session.title
         self._prev_trace: Any = None
         self._depth = 0
         self._active = False
@@ -186,6 +294,22 @@ class PyTracer:
         if event == "exception" and isinstance(arg, tuple) and len(arg) >= 2:
             exc_type = getattr(arg[0], "__name__", str(arg[0]))
             exc_val = safe_repr(arg[1])
+
+        # Bounded event guard: roll session if max_events reached to prevent memory exhaustion
+        if len(self.session.events) >= self.max_events:
+            if self.on_session_roll:
+                self.session.compute_stats()
+                try:
+                    self.on_session_roll(self.session)
+                except Exception:
+                    pass
+            self._session_slice += 1
+            new_title = f"{self._base_title} [Segment {self._session_slice}]"
+            self.session = TraceSession(
+                title=new_title,
+                files=list(self.session.files),
+                file_sources=dict(self.session.file_sources),
+            )
 
         self.session.record_event(
             kind=event,

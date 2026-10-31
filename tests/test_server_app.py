@@ -348,6 +348,29 @@ class TestHttpServerEndpoints:
             assert "session" in data
             assert data["session"]["stats"]["total_events"] > 0
 
+    def test_api_function_inspection(self, app_server_url, tmp_path):
+        test_py = tmp_path / "inspect_target.py"
+        test_py.write_text(
+            "def target_func(a, b=1):\n    return a + b\n",
+            encoding="utf-8"
+        )
+        # 1. Missing params -> 400
+        req_bad = urllib.request.Request(f"{app_server_url}/api/function-inspection")
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            urllib.request.urlopen(req_bad, timeout=3.0)
+        assert exc.value.code == 400
+
+        # 2. Valid inspection
+        url = f"{app_server_url}/api/function-inspection?file_path={test_py}&func_name=target_func"
+        req_ok = urllib.request.Request(url)
+        with urllib.request.urlopen(req_ok, timeout=3.0) as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode())
+            assert data["func_name"] == "target_func"
+            assert data["implementation"] is not None
+            assert "def target_func(a, b=1):" in data["implementation"]["code"]
+            assert isinstance(data["references"], list)
+
     def test_parse_invocation_args(self):
         from pydebug.server.app import PyDebugHandler
 

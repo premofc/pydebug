@@ -44,8 +44,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   aiConfig,
   onOpenAiSettings,
 }) => {
-
-
   const navItems = [
     { id: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard, desc: 'Traced Sessions & Operations' },
     { id: 'hunter' as const, label: 'Timeline Replay', icon: Play, desc: 'Step-by-Step VCR Line Replay' },
@@ -54,13 +52,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   ];
 
   return (
-    <header className="h-14 border-b border-slate-200/80 dark:border-white/[0.06] bg-white/95 dark:bg-[#060911]/90 backdrop-blur-md px-4 lg:px-6 flex items-center justify-between gap-3 select-none z-40 sticky top-0 transition-all">
+    <header className="glass-nav-top w-full h-14 px-4 lg:px-8 flex items-center justify-between gap-3 select-none z-40 sticky top-0 transition-all">
       {/* Brand & Active Context */}
       <div className="flex items-center gap-3 min-w-0">
         {/* Brand Logo */}
         <div 
           onClick={() => onPageChange('dashboard')}
-          className="flex items-center gap-2.5 cursor-pointer group"
+          className="flex items-center gap-2.5 cursor-pointer group shrink-0"
         >
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-0.5 shadow-md shadow-indigo-500/20 group-hover:shadow-indigo-500/40 border border-indigo-500/30 group-hover:scale-105 transition-all duration-200 flex items-center justify-center">
             <svg className="w-6 h-6" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -93,17 +91,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-sm tracking-tight text-slate-900 dark:text-white">PyDebug</span>
               <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 font-mono">
-                v0.2.0
+                v0.3.0
               </span>
             </div>
             <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium tracking-wide">STUDIO</span>
           </div>
         </div>
 
+        {/* Online Status Pill */}
+        <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 font-semibold shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span>6000 Online</span>
+        </div>
 
-
-        {/* Active Trace File Breadcrumb (visible on 2xl+ to prevent collision with mode switcher) */}
-        <div className="hidden 2xl:flex items-center gap-2 text-xs font-mono bg-slate-100/80 dark:bg-[#050811]/60 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-white/[0.08] max-w-[190px] shrink min-w-0 overflow-hidden">
+        {/* Active Trace File Breadcrumb */}
+        <div className="hidden lg:flex items-center gap-2 text-xs font-mono bg-slate-100/80 dark:bg-[#050811]/60 px-2.5 py-1 rounded-xl border border-slate-200/80 dark:border-white/[0.08] max-w-[220px] xl:max-w-xs shrink min-w-0 overflow-hidden">
           <FileCode className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400 shrink-0" />
           {activeFileName && !activeFileName.includes("demo_") ? (
             <div className="flex items-center gap-1 min-w-0 truncate">
@@ -127,7 +129,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* Center: Segmented Navigation Pill */}
       <nav
         aria-label="Mode Switcher"
-        className="flex items-center gap-1 bg-slate-100 dark:bg-[#050811] p-1 rounded-2xl border border-slate-300 dark:border-white/[0.08] shadow-xs shrink-0 mx-2"
+        className="flex items-center gap-1 bg-slate-100/90 dark:bg-[#080d1a]/80 p-1 rounded-2xl border border-slate-200/90 dark:border-white/[0.08] shadow-xs shrink-0 mx-2 backdrop-blur-md"
       >
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -136,14 +138,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               key={item.id}
               onClick={() => onPageChange(item.id)}
-              className={`group flex items-center gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-xs font-semibold transition-all duration-200 whitespace-nowrap cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 ${
+              className={`group flex items-center gap-2 px-3 md:px-4 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 whitespace-nowrap cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 ${
                 isActive
-                  ? 'bg-white dark:bg-[#0c1220] text-indigo-600 dark:text-indigo-300 shadow-sm border border-slate-200/90 dark:border-indigo-500/40 ring-1 ring-indigo-500/20 scale-[1.02]'
+                  ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white shadow-sm border border-slate-200/90 dark:border-indigo-400/30 scale-[1.02]'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100 hover:scale-[1.01] active:scale-[0.98]'
               }`}
-              title={item.desc}              aria-current={isActive ? 'page' : undefined}
+              title={item.desc}
+              aria-current={isActive ? 'page' : undefined}
             >
-              <Icon strokeWidth={isActive ? 2.3 : 2} className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${isActive ? 'text-indigo-600 dark:text-indigo-400 scale-110' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'}`} />
+              <Icon strokeWidth={isActive ? 2.3 : 2} className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${isActive ? 'text-indigo-600 dark:text-white scale-110' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'}`} />
               <span className="hidden sm:inline">{item.label}</span>
             </button>
           );
@@ -151,7 +154,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       </nav>
 
       {/* Right: Metrics, AI Settings, GitHub & Controls */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2.5 shrink-0">
         {/* AI Provider Config Pill */}
         <button
           onClick={onOpenAiSettings}

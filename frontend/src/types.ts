@@ -70,7 +70,7 @@ export interface SessionSummary {
   id: string;
   title: string;
   created_at: string;
-  tag: 'FastAPI Endpoint' | 'MCP Tool' | 'Python Script' | 'Playground Run';
+  tag: 'FastAPI Endpoint' | 'MCP Tool' | 'Python Script' | 'Playground Run' | 'Server Startup' | 'Script Run' | (string & {});
   status: string;
   first_func?: string;
   stats: {
@@ -144,4 +144,34 @@ export interface TestCase {
   file_path: string;
   args: Record<string, any>;
   expected_return?: string;
+}
+
+export interface FunctionCallerReference {
+  file_path: string;
+  rel_path: string;
+  line: number;
+  caller_context: string;
+  snippet: string;
+  is_internal: boolean;
+}
+
+export interface FunctionImplementation {
+  file_path: string;
+  rel_path: string;
+  name: string;
+  start_line: number;
+  end_line: number;
+  code: string;
+  is_async?: boolean;
+  decorators?: string[];
+  class_name?: string | null;
+}
+
+export interface FunctionInspectionResponse {
+  func_name: string;
+  file_path: string;
+  rel_path: string;
+  implementation: FunctionImplementation | null;
+  references: FunctionCallerReference[];
+  total_references: number;
 }

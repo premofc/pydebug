@@ -530,7 +530,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
           </div>
 
           {/* Sticky Bottom Live Value Inspection Bar (Real Birdseye Inspector) */}
-          <div className="border-t border-slate-200 dark:border-white/[0.08] bg-slate-50/95 dark:bg-[#090e1a]/95 px-4 py-2 flex items-center justify-between gap-3 text-xs font-mono shrink-0 select-none">
+          <div className="mx-4 my-2.5 px-4 py-2 rounded-2xl glass-panel shadow-md border border-slate-200/80 dark:border-white/[0.08] flex items-center justify-between gap-3 text-xs font-mono shrink-0 select-none">
             {hoveredExpr || selectedExprText ? (
               (() => {
                 const activeExpr = hoveredExpr || evaluatedExpressionsList.find((e) => e.text === selectedExprText);

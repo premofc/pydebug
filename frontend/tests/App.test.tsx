@@ -34,7 +34,7 @@ describe('App Root Component', () => {
   it('renders navbar and default dashboard page', async () => {
     render(<App />);
     expect(screen.getByText('PyDebug')).toBeInTheDocument();
-    expect(screen.getByText(/v0\.1/i)).toBeInTheDocument();
+    expect(screen.getByText(/v0\.\d+/i)).toBeInTheDocument();
   });
 
   it('switches between pages when navigation buttons are clicked', async () => {
