@@ -474,6 +474,69 @@ class PyDebugHandler(BaseHTTPRequestHandler):
             return {}
         return json.loads(self.rfile.read(length).decode("utf-8"))
 
+    @staticmethod
+    def _parse_invocation_args(
+        args: Any = None,
+        call_args: list[Any] | None = None,
+        call_expr: str | None = None,
+    ) -> tuple[list[Any], dict[str, Any]]:
+        """Extracts positional and keyword arguments from dict, list, or Python call expression."""
+        def _smart_eval(v: Any) -> Any:
+            if not isinstance(v, str):
+                return v
+            s = v.strip()
+            if not s:
+                return s
+            if s.lower() == "true":
+                return True
+            if s.lower() == "false":
+                return False
+            if s.lower() in ("none", "null"):
+                return None
+            try:
+                return ast.literal_eval(s)
+            except Exception:
+                return v
+
+        pos_args: list[Any] = [_smart_eval(x) for x in (call_args or [])]
+        kw_args: dict[str, Any] = {}
+
+        if isinstance(args, dict):
+            for k, v in args.items():
+                if k in ("self", "cls"):
+                    continue
+                kw_args[k] = _smart_eval(v)
+        elif isinstance(args, list):
+            pos_args.extend(_smart_eval(x) for x in args)
+
+        if call_expr and isinstance(call_expr, str) and call_expr.strip():
+            expr = call_expr.strip()
+            # If user provided full function invocation like `my_func(a, b=2)`, extract inside
+            if "(" in expr and expr.endswith(")"):
+                inside = expr[expr.index("(") + 1 : -1].strip()
+            else:
+                inside = expr
+
+            if inside:
+                try:
+                    tree = ast.parse(f"_f({inside})", mode="eval")
+                    if isinstance(tree.body, ast.Call):
+                        for arg in tree.body.args:
+                            try:
+                                pos_args.append(ast.literal_eval(arg))
+                            except Exception:
+                                pos_args.append(ast.unparse(arg))
+                        for kw in tree.body.keywords:
+                            if kw.arg and kw.arg not in ("self", "cls"):
+                                try:
+                                    kw_args[kw.arg] = ast.literal_eval(kw.value)
+                                except Exception:
+                                    kw_args[kw.arg] = ast.unparse(kw.value)
+                except Exception:
+                    pass
+
+        return pos_args, kw_args
+
     def _handle_execute_function(self) -> None:
         payload = {}
         try:
@@ -570,12 +633,16 @@ class PyDebugHandler(BaseHTTPRequestHandler):
             exc_file = None
 
             try:
-                call_kwargs = kwargs if isinstance(kwargs, dict) else {}
+                pos_args, call_kwargs = self._parse_invocation_args(
+                    args=payload.get("args"),
+                    call_args=payload.get("call_args"),
+                    call_expr=payload.get("call_expr"),
+                )
                 with capture_logs(session):
                     if inspect.iscoroutinefunction(exec_func):
-                        ret_val = asyncio.run(exec_func(**call_kwargs))
+                        ret_val = asyncio.run(exec_func(*pos_args, **call_kwargs))
                     else:
-                        ret_val = exec_func(**call_kwargs)
+                        ret_val = exec_func(*pos_args, **call_kwargs)
                         if inspect.iscoroutine(ret_val):
                             ret_val = asyncio.run(ret_val)
             except Exception as exc:

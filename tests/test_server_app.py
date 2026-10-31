@@ -347,3 +347,50 @@ class TestHttpServerEndpoints:
             assert data["success"] is True
             assert "session" in data
             assert data["session"]["stats"]["total_events"] > 0
+
+    def test_parse_invocation_args(self):
+        from pydebug.server.app import PyDebugHandler
+
+        # 1. Dict with numbers, booleans, None
+        pos, kw = PyDebugHandler._parse_invocation_args(args={"amount": "1000", "active": "True", "tag": "None"})
+        assert pos == []
+        assert kw["amount"] == 1000
+        assert kw["active"] is True
+        assert kw["tag"] is None
+
+        # 2. Positional list
+        pos, kw = PyDebugHandler._parse_invocation_args(call_args=["5", "'cataract'"])
+        assert pos == [5, "cataract"]
+
+        # 3. Call expression: full call
+        pos, kw = PyDebugHandler._parse_invocation_args(call_expr="validate_policy_id(5, category='cataract')")
+        assert pos == [5]
+        assert kw["category"] == "cataract"
+
+        # 4. Call expression: raw args inside parens
+        pos, kw = PyDebugHandler._parse_invocation_args(call_expr="10, rate=0.15")
+        assert pos == [10]
+        assert kw["rate"] == 0.15
+
+    def test_api_execute_function_with_call_expr(self, app_server_url, tmp_path):
+        target_py = tmp_path / "sandbox_demo_expr.py"
+        target_py.write_text(
+            "def multiply(x, factor=2):\n    return x * factor\n",
+            encoding="utf-8"
+        )
+
+        req = urllib.request.Request(
+            f"{app_server_url}/api/execute-function",
+            data=json.dumps({
+                "file_path": str(target_py),
+                "function_name": "multiply",
+                "call_expr": "multiply(7, factor=3)",
+            }).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=5.0) as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode())
+            assert data["success"] is True
+            assert data["return_val"] == "21"

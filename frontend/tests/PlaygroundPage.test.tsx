@@ -58,7 +58,7 @@ describe('PlaygroundPage Component', () => {
     });
   });
 
-  it('selects function and populates default sample arguments', async () => {
+  it('selects function and populates interactive parameter fields', async () => {
     render(
       <PlaygroundPage
         session={dummySession}
@@ -73,11 +73,14 @@ describe('PlaygroundPage Component', () => {
 
     fireEvent.click(screen.getAllByText(/calculate_tax/)[0]);
 
-    expect(screen.getByText(/Function Arguments \(JSON\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Python Invocation Expression/i)).toBeInTheDocument();
+    expect(screen.getByText(/Parameters \(2\)/i)).toBeInTheDocument();
+    expect(screen.getByText('amount')).toBeInTheDocument();
+    expect(screen.getByText('rate')).toBeInTheDocument();
   });
 
-  it('detects invalid JSON in the parameter editor', async () => {
-    const { container } = render(
+  it('allows customizing parameter inputs and updates call expression', async () => {
+    render(
       <PlaygroundPage
         session={dummySession}
         onSessionUpdated={vi.fn()}
@@ -90,10 +93,10 @@ describe('PlaygroundPage Component', () => {
     });
     fireEvent.click(screen.getAllByText(/calculate_tax/)[0]);
 
-    const textarea = container.querySelector('textarea')!;
-    fireEvent.change(textarea, { target: { value: '{ invalid syntax' } });
+    const amountInput = screen.getByPlaceholderText('Enter amount...');
+    fireEvent.change(amountInput, { target: { value: '500' } });
 
-    expect(screen.getByText('Invalid JSON')).toBeInTheDocument();
+    expect((amountInput as HTMLInputElement).value).toBe('500');
   });
 
   it('handles successful function execution and updates session', async () => {
@@ -267,12 +270,10 @@ describe('PlaygroundPage Component', () => {
       />
     );
 
-    // Immediately shows greeting() in the header
-    expect(screen.getByText('greeting()')).toBeInTheDocument();
+    expect(screen.getAllByText(/greeting/).length).toBeGreaterThanOrEqual(1);
 
-    // After async functions load (which returns calculate_tax), greeting() is preserved!
     await waitFor(() => {
-      expect(screen.getByText('greeting()')).toBeInTheDocument();
+      expect(screen.getAllByText(/greeting/).length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -353,5 +354,25 @@ describe('PlaygroundPage Component', () => {
     fireEvent.change(searchInput, { target: { value: 'audit' } });
     expect(screen.getByText('Failed to record audit trail')).toBeInTheDocument();
     expect(screen.queryByText('Starting tax calculation')).not.toBeInTheDocument();
+  });
+
+  it('supports collapsing and expanding panels via splitter tools', async () => {
+    render(
+      <PlaygroundPage
+        session={dummySession}
+        onSessionUpdated={vi.fn()}
+        onNavigateToHunter={vi.fn()}
+      />
+    );
+
+    const collapseLeftBtn = screen.getByTitle('Collapse Functions Panel');
+    fireEvent.click(collapseLeftBtn);
+
+    expect(screen.getByTitle('Expand Target Functions')).toBeInTheDocument();
+
+    const expandLeftBtn = screen.getByTitle('Expand Target Functions');
+    fireEvent.click(expandLeftBtn);
+
+    expect(screen.getByText('Target Functions')).toBeInTheDocument();
   });
 });

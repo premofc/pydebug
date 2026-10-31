@@ -70,7 +70,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-sm tracking-tight text-slate-900 dark:text-white">PyDebug</span>
               <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 font-mono">
-                v0.1.7
+                v0.1.8
               </span>
             </div>
             <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium tracking-wide">STUDIO</span>
