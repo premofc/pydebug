@@ -396,7 +396,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
   const relativeFile = selectedFunc?.file_path.split(/[\\/]/).slice(-2).join('/') || selectedFunc?.file_path || '';
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors pb-20">
       {/* 2-Column Power Studio Split */}
       <div className="flex-1 flex overflow-hidden">
         {/* Column 1: Spacious Function Invocation Studio (Left 55%) */}

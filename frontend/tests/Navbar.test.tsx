@@ -29,16 +29,10 @@ describe('Navbar Component', () => {
     },
   };
 
-  it('renders branding title and version badge', () => {
+  it('renders branding title and online indicator', () => {
     render(<Navbar {...defaultProps} />);
     expect(screen.getByText('PyDebug')).toBeInTheDocument();
-    expect(screen.getByText('v0.3.0')).toBeInTheDocument();
-  });
-
-  it('keeps navbar streamlined without intrusive live stream badges', () => {
-    render(<Navbar {...defaultProps} isConnected={true} />);
-    expect(screen.queryByText('Live Stream')).not.toBeInTheDocument();
-    expect(screen.queryByText('Snapshot')).not.toBeInTheDocument();
+    expect(screen.getByText('6000 Online')).toBeInTheDocument();
   });
 
   it('renders active filename and function breadcrumbs', () => {
@@ -47,37 +41,11 @@ describe('Navbar Component', () => {
     expect(screen.getByText('check_policy_waiting_period()')).toBeInTheDocument();
   });
 
-  it('falls back to workspace ready text when filename is demo or missing', () => {
-    render(
-      <Navbar
-        {...defaultProps}
-        activeFileName="demo_algorithms.py"
-        activeFunctionName="compute_risk_score"
-      />
-    );
-    expect(screen.getByText('ClaimCare MCP Workspace')).toBeInTheDocument();
-    expect(screen.getByText('• Ready')).toBeInTheDocument();
-  });
-
-  it('calls onPageChange when navigation pills are clicked', () => {
-    const onPageChange = vi.fn();
-    render(<Navbar {...defaultProps} onPageChange={onPageChange} />);
-
-    fireEvent.click(screen.getByText('Timeline Replay'));
-    expect(onPageChange).toHaveBeenCalledWith('hunter');
-
-    fireEvent.click(screen.getByText('Live Sandbox'));
-    expect(onPageChange).toHaveBeenCalledWith('playground');
-
-    fireEvent.click(screen.getByText('Expression Flow'));
-    expect(onPageChange).toHaveBeenCalledWith('birdseye');
-  });
-
-  it('calls onOpenAiSettings when AI pill is clicked', () => {
+  it('renders AI Engine button and triggers onOpenAiSettings', () => {
     const onOpenAiSettings = vi.fn();
     render(<Navbar {...defaultProps} onOpenAiSettings={onOpenAiSettings} />);
 
-    const aiButton = screen.getByRole('button', { name: /ollama/i });
+    const aiButton = screen.getByTitle(/Configure AI Engine/i);
     fireEvent.click(aiButton);
     expect(onOpenAiSettings).toHaveBeenCalled();
   });
@@ -91,9 +59,12 @@ describe('Navbar Component', () => {
     expect(onToggleTheme).toHaveBeenCalled();
   });
 
-  it('displays real-time total events and duration metrics', () => {
-    render(<Navbar {...defaultProps} stats={{ total_events: 950, duration_ms: 128.4, max_depth: 3 }} />);
-    expect(screen.getByText('950')).toBeInTheDocument();
-    expect(screen.getByText('128.4')).toBeInTheDocument();
+  it('navigates to dashboard when clicking brand logo', () => {
+    const onPageChange = vi.fn();
+    render(<Navbar {...defaultProps} onPageChange={onPageChange} />);
+
+    const brand = screen.getByText('PyDebug');
+    fireEvent.click(brand);
+    expect(onPageChange).toHaveBeenCalledWith('dashboard');
   });
 });

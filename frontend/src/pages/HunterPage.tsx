@@ -653,8 +653,8 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors">
-      {/* 1. MAIN 2-PANEL RESIZABLE LAYOUT */}
-      <div ref={mainSplitterRef} className="flex-1 flex overflow-hidden relative">
+      {/* 1. MAIN 2-PANEL RESIZABLE LAYOUT (pb-28 ensures floating VCR & dock never obscure code) */}
+      <div ref={mainSplitterRef} className="flex-1 flex overflow-hidden relative pb-28">
         {/* LEFT PANEL: SOURCE CODE VIEWER WITH LIVE POINTER & INLINE VARIABLES */}
         <div 
           className="flex flex-col border-r border-slate-200 dark:border-white/[0.08] overflow-hidden bg-white dark:bg-[#060911] transition-all"
@@ -1584,8 +1584,8 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
         </div>
       </div>
 
-      {/* 2. BOTTOM TIMELINE PLAYER CONTROLS (Floating VCR Scrubber) */}
-      <div className="mx-4 my-2.5 px-4 py-2 rounded-2xl glass-panel shadow-lg flex items-center justify-between gap-4 select-none shrink-0 z-10 border border-slate-200/80 dark:border-white/[0.08]">
+      {/* 2. FLOATING VCR TIMELINE CONTROLLER (Floats at bottom-16, directly ABOVE the bottom dock at bottom-3.5) */}
+      <div className="fixed bottom-16 left-1/2 -translate-x-1/2 w-auto max-w-3xl px-4 py-1.5 rounded-full glass-dock-bottom shadow-2xl flex items-center justify-between gap-4 select-none z-40 border border-slate-200/90 dark:border-white/[0.12] backdrop-blur-xl">
         {/* Play & Step Buttons */}
         <div className="flex items-center gap-1.5 shrink-0">
           <button

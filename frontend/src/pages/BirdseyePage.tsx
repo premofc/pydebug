@@ -210,7 +210,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 font-sans transition-colors">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 font-sans transition-colors pb-20">
       <div className="flex-1 grid grid-cols-12 overflow-hidden">
         
         {/* COLUMN 1: Function Calls Sidebar (280px / 3 cols) */}

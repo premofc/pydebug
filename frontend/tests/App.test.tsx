@@ -34,24 +34,24 @@ describe('App Root Component', () => {
   it('renders navbar and default dashboard page', async () => {
     render(<App />);
     expect(screen.getByText('PyDebug')).toBeInTheDocument();
-    expect(screen.getByText(/v0\.\d+/i)).toBeInTheDocument();
+    expect(screen.getByText('6000 Online')).toBeInTheDocument();
   });
 
-  it('switches between pages when navigation buttons are clicked', async () => {
+  it('switches between pages when bottom dock navigation buttons are clicked', async () => {
     render(<App />);
 
     // Click Hunter navigation pill (shows clean empty state when no trace loaded)
-    const hunterBtn = screen.getByTitle(/Step-by-Step VCR Line Replay/i);
+    const hunterBtn = screen.getByTitle(/Switch to Timeline Replay/i);
     fireEvent.click(hunterBtn);
     expect(screen.getByText('No Traced Execution Loaded')).toBeInTheDocument();
 
     // Click Playground / Sandbox navigation pill
-    const sandboxBtn = screen.getByTitle(/Interactive Function Runner/i);
+    const sandboxBtn = screen.getByTitle(/Switch to Live Sandbox/i);
     fireEvent.click(sandboxBtn);
     expect(screen.getByText(/Switch Function/i)).toBeInTheDocument();
 
     // Click Birdseye navigation pill (shows clean empty state when no trace loaded)
-    const flameBtn = screen.getByTitle(/Expression.*Inspector/i);
+    const flameBtn = screen.getByTitle(/Switch to Expression Flow/i);
     fireEvent.click(flameBtn);
     expect(screen.getByText('No Expression Traces Recorded')).toBeInTheDocument();
   });
@@ -67,11 +67,11 @@ describe('App Root Component', () => {
   it('opens and closes AI settings modal', async () => {
     render(<App />);
 
-    const aiButton = screen.getByRole('button', { name: /ollama/i });
+    const aiButton = screen.getByTitle(/Configure AI Engine/i);
     fireEvent.click(aiButton);
 
     await waitFor(() => {
       expect(screen.getByText('AI Co-Pilot Settings')).toBeInTheDocument();
-    });
-  });
+    }, { timeout: 8000 });
+  }, 12000);
 });

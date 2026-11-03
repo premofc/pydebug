@@ -218,7 +218,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors">
+    <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors pb-24">
       {/* Hero + system status with ambient radial glow */}
       <div className="relative overflow-hidden border-b border-slate-200/70 dark:border-white/[0.08] bg-white/80 dark:bg-[#060911]/90 backdrop-blur-md px-6 sm:px-10 lg:px-12 py-7 transition-colors">
         <div className="absolute top-0 right-1/4 w-96 h-36 bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent blur-3xl pointer-events-none" />

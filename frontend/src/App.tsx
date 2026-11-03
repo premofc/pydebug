@@ -1,10 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  LayoutDashboard, 
-  Play, 
-  Eye, 
-  FlaskConical 
-} from 'lucide-react';
 import { Navbar } from './components/Navbar';
 import { AiSettingsModal } from './components/AiSettingsModal';
 import { DashboardPage } from './pages/DashboardPage';
@@ -27,7 +21,34 @@ export const App: React.FC = () => {
   const [theme, setTheme] = useState<ThemeMode>(() => {
     return (localStorage.getItem('pydebug_theme') as ThemeMode) || 'dark';
   });
-  const [currentPage, setCurrentPage] = useState<PageId>('dashboard');
+  const [currentPage, setCurrentPage] = useState<PageId>(() => {
+    const hash = window.location.hash.replace('#', '') as PageId;
+    if (['dashboard', 'hunter', 'birdseye', 'playground'].includes(hash)) {
+      return hash;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const view = params.get('view') as PageId;
+    if (['dashboard', 'hunter', 'birdseye', 'playground'].includes(view)) {
+      return view;
+    }
+    return 'dashboard';
+  });
+
+  useEffect(() => {
+    const handleHash = () => {
+      const h = window.location.hash.replace('#', '') as PageId;
+      if (['dashboard', 'hunter', 'birdseye', 'playground'].includes(h)) {
+        setCurrentPage(h);
+      }
+    };
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
+
+  const changePage = (page: PageId) => {
+    setCurrentPage(page);
+    window.location.hash = page;
+  };
   const [session, setSession] = useState<TraceSession>(EMPTY_TRACE_SESSION);
   // The mock is only a placeholder for the Birdseye/Hunter views until real
   // trace data arrives; the navbar must not present it as a real session.
@@ -191,10 +212,10 @@ export const App: React.FC = () => {
   };
 
   const navItems = [
-    { id: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'hunter' as const, label: 'Timeline Replay', icon: Play },
-    { id: 'birdseye' as const, label: 'Expression Flow', icon: Eye },
-    { id: 'playground' as const, label: 'Live Sandbox', icon: FlaskConical },
+    { id: 'dashboard' as const, label: 'Dashboard', emoji: '📊' },
+    { id: 'hunter' as const, label: 'Timeline Replay', emoji: '▶' },
+    { id: 'birdseye' as const, label: 'Expression Flow', emoji: '👁' },
+    { id: 'playground' as const, label: 'Live Sandbox', emoji: '🧪' },
   ];
 
   return (
@@ -203,7 +224,7 @@ export const App: React.FC = () => {
         theme={theme}
         onToggleTheme={toggleTheme}
         currentPage={currentPage}
-        onPageChange={setCurrentPage}
+        onPageChange={changePage}
         stats={
           hasRealSession
             ? {
@@ -270,26 +291,25 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      {/* Floating Bottom Quick Navigation Dock */}
+      {/* Floating Bottom Quick Navigation Dock (Exact match to HTML mockup) */}
       <nav
         aria-label="Bottom Navigation Dock"
-        className="fixed bottom-3.5 left-1/2 -translate-x-1/2 z-40 hidden md:flex items-center gap-1.5 p-1 rounded-full glass-dock-bottom shadow-2xl select-none transition-all duration-300 hover:scale-[1.01]"
+        className="fixed bottom-3.5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 p-1 rounded-full glass-dock-bottom shadow-2xl select-none"
       >
         {navItems.map((item) => {
-          const Icon = item.icon;
           const isActive = currentPage === item.id;
           return (
             <button
               key={`dock-${item.id}`}
-              onClick={() => setCurrentPage(item.id)}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 cursor-pointer ${
+              onClick={() => changePage(item.id)}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-150 cursor-pointer ${
                 isActive
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 scale-105'
                   : 'text-slate-400 hover:text-slate-100 hover:bg-white/10'
               }`}
               title={`Switch to ${item.label}`}
             >
-              <Icon strokeWidth={isActive ? 2.5 : 2} className="w-3.5 h-3.5" />
+              <span>{item.emoji}</span>
               <span>{item.label}</span>
             </button>
           );
