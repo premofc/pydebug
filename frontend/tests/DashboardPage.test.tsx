@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { DashboardPage } from '../src/pages/DashboardPage';
 
 describe('DashboardPage Component', () => {
@@ -83,6 +83,32 @@ describe('DashboardPage Component', () => {
     render(<DashboardPage onSelectSession={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Running')).toBeInTheDocument());
     expect(screen.getByText('Running').className).toContain('bg-sky-500/10');
+  });
+
+  it('updates an existing session row when its same-id live trace finishes', async () => {
+    let currentSessions = [mockSessions[2]];
+    vi.useFakeTimers();
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/sessions') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(currentSessions) });
+      }
+      if (url === '/api/functions') return Promise.resolve({ ok: true, json: () => Promise.resolve(mockFunctions) });
+      if (url.startsWith('/api/session')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: 'sess_3', events: [] }) });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+
+    try {
+      render(<DashboardPage onSelectSession={vi.fn()} />);
+      await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+      expect(screen.getByText('Running')).toBeInTheDocument();
+
+      currentSessions = [{ ...mockSessions[2], status: '201 OK', stats: { total_events: 14, duration_ms: 32 } }];
+      await act(async () => { await vi.advanceTimersByTimeAsync(3500); });
+      expect(screen.getByText('201 OK')).toBeInTheDocument();
+      expect(screen.queryByText('Running')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('filters sessions by search query input', async () => {

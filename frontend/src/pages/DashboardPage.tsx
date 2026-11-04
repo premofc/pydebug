@@ -84,15 +84,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
       const res = await fetch('/api/sessions');
       if (res.ok) {
         const data: SessionSummary[] = await res.json();
-        // Stable state: only update when the list actually changed so polls
-        // can't churn re-renders or yank the expanded panel.
+        // Live snapshots retain their session IDs, so compare changing summary
+        // fields too. Otherwise a Running row stays stale after the trace ends.
         let next: SessionSummary[] = data;
         if (!Array.isArray(data)) return;
         // Dedupe by id: a session posted twice (stream snapshot + final flush)
         // must not render two accordion rows for the same trace.
         next = data.filter((item, i) => data.findIndex((x) => x.id === item.id) === i);
         setSessions((prev) => (
-          prev.length === next.length && prev.every((p, i) => p.id === next[i].id) ? prev : next
+          prev.length === next.length && prev.every((p, i) => {
+            const updated = next[i];
+            return p.id === updated.id && p.title === updated.title && p.tag === updated.tag &&
+              p.status === updated.status && p.stats?.total_events === updated.stats?.total_events &&
+              p.stats?.duration_ms === updated.stats?.duration_ms;
+          }) ? prev : next
         ));
         if (!initialAutoExpandedRef.current && next.length > 0) { initialAutoExpandedRef.current = true; setExpandedId(next[0].id); }
       }
