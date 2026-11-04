@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Bot,
@@ -81,34 +81,75 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
   const [saving, setSaving] = useState<boolean>(false);
   const [testResult, setTestResult] = useState<AIConnectionResult | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+  const [configLoaded, setConfigLoaded] = useState(false);
+  const configLoading = isOpen && !configLoaded;
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
 
   // Fetch current active config from backend on open
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || configLoaded) return;
 
+    const controller = new AbortController();
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialogRef.current?.querySelector<HTMLElement>('button, input, select')?.focus();
     const fetchConfig = async () => {
-      setTestResult(null);
-      setSaveSuccess(false);
       try {
-        const res = await fetch('/api/ai/config');
-        if (res.ok) {
-          const cfg: AIProviderConfig = await res.json();
-          setProvider(cfg.provider);
-          setBaseUrl(cfg.base_url);
-          setModel(cfg.model);
-          setHasExistingKey(!!cfg.has_api_key);
-          setMaskedKey(cfg.api_key_masked || '');
-          const preset = PROVIDER_PRESETS[cfg.provider] || PROVIDER_PRESETS.custom;
-          setAvailableModels(preset.models.includes(cfg.model) ? preset.models : [cfg.model, ...preset.models]);
-          setIsCustomModel(!preset.models.includes(cfg.model));
+        const res = await fetch('/api/ai/config', { signal: controller.signal });
+        const cfg = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(cfg.error || cfg.message || `Could not load settings (${res.status}).`);
+        if (!controller.signal.aborted && cfg.provider && cfg.base_url && cfg.model) {
+          const savedConfig = cfg as AIProviderConfig;
+          setProvider(savedConfig.provider);
+          setBaseUrl(savedConfig.base_url);
+          setModel(savedConfig.model);
+          setHasExistingKey(!!savedConfig.has_api_key);
+          setMaskedKey(savedConfig.api_key_masked || '');
+          const preset = PROVIDER_PRESETS[savedConfig.provider] || PROVIDER_PRESETS.custom;
+          setAvailableModels(preset.models.includes(savedConfig.model) ? preset.models : [savedConfig.model, ...preset.models]);
+          setIsCustomModel(!preset.models.includes(savedConfig.model));
         }
       } catch (err) {
-        console.error('Failed to load AI config:', err);
+        if (!controller.signal.aborted) setRequestError(err instanceof Error ? err.message : 'Could not load saved AI settings.');
+      } finally {
+        if (!controller.signal.aborted) setConfigLoaded(true);
       }
     };
 
     fetchConfig();
-  }, [isOpen]);
+    return () => controller.abort();
+  }, [configLoaded, isOpen]);
+
+  useEffect(() => {
+    if (isOpen) {
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.key === 'Escape' && !saving) {
+          onClose();
+          return;
+        }
+        if (event.key === 'Tab') {
+          const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+            'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
+          ) ?? []);
+          if (focusable.length === 0) return;
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+      };
+      window.addEventListener('keydown', onKeyDown);
+      return () => window.removeEventListener('keydown', onKeyDown);
+    }
+    returnFocusRef.current?.focus();
+    return undefined;
+  }, [isOpen, onClose, saving]);
 
   // Handle provider tab change
   const handleSelectProvider = (newProv: 'ollama' | 'openai' | 'deepseek' | 'custom') => {
@@ -120,26 +161,27 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
     setIsCustomModel(false);
     setTestResult(null);
     setSaveSuccess(false);
+    setRequestError(null);
   };
 
   // Fetch models dynamically from provider
   const handleFetchModels = async () => {
     setFetchingModels(true);
     setTestResult(null);
+    setRequestError(null);
     try {
       const q = new URLSearchParams({ provider, base_url: baseUrl });
       const res = await fetch(`/api/ai/models?${q.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.models && data.models.length > 0) {
-          setAvailableModels(data.models);
-          if (!data.models.includes(model)) {
-            setModel(data.models[0]);
-          }
-        }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || data.message || `Could not fetch models (${res.status}).`);
+      if (Array.isArray(data.models) && data.models.length > 0) {
+        setAvailableModels(data.models);
+        if (!data.models.includes(model)) setModel(data.models[0]);
+      } else {
+        setRequestError('The provider responded, but did not return any models. Check the endpoint and try again.');
       }
-    } catch (e) {
-      console.error('Failed to query models from provider:', e);
+    } catch (err) {
+      setRequestError(err instanceof Error ? err.message : 'Could not discover models. Check the endpoint and try again.');
     } finally {
       setFetchingModels(false);
     }
@@ -149,6 +191,7 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
   const handleTestConnection = async () => {
     setTestingConnection(true);
     setTestResult(null);
+    setRequestError(null);
     try {
       const payload: Record<string, any> = {
         provider,
@@ -168,15 +211,16 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
       });
 
       const data: AIConnectionResult = await res.json();
+      if (!res.ok && !data.message) data.message = `Connection check failed (${res.status}).`;
       setTestResult(data);
       if (data.models && data.models.length > 0) {
         setAvailableModels(data.models);
       }
-    } catch (err: any) {
+    } catch (err) {
       setTestResult({
         success: false,
         latency_ms: 0,
-        message: err.message || 'Network error while attempting connection.',
+        message: err instanceof Error ? err.message : 'Network error while attempting connection.',
       });
     } finally {
       setTestingConnection(false);
@@ -187,6 +231,7 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
   const handleSave = async () => {
     setSaving(true);
     setSaveSuccess(false);
+    setRequestError(null);
     try {
       const payload: Record<string, any> = {
         provider,
@@ -205,18 +250,13 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
         body: JSON.stringify(payload),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        setSaveSuccess(true);
-        if (onConfigSaved && data.config) {
-          onConfigSaved(data.config);
-        }
-        setTimeout(() => {
-          onClose();
-        }, 1200);
-      }
-    } catch (e) {
-      console.error('Failed to save AI config:', e);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || data.message || `Could not save settings (${res.status}).`);
+      setSaveSuccess(true);
+      if (onConfigSaved && data.config) onConfigSaved(data.config);
+      setTimeout(() => onClose(), 1200);
+    } catch (err) {
+      setRequestError(err instanceof Error ? err.message : 'Could not save AI settings. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -225,8 +265,8 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md select-none animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl bg-white dark:bg-[#090e1a] border border-slate-200 dark:border-white/[0.12] rounded-2xl shadow-2xl shadow-indigo-500/10 overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="ai-settings-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
+      <div id="ai-settings-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="ai-settings-title" aria-busy={configLoading || fetchingModels || testingConnection || saving} className="ai-settings-dialog relative w-full max-w-2xl bg-white dark:bg-[#090e1a] border border-slate-200 dark:border-white/[0.12] rounded-2xl shadow-2xl shadow-indigo-500/10 overflow-hidden flex flex-col max-h-[90vh]">
         {/* Ambient Top Glow */}
         <div className="absolute top-0 left-1/4 right-1/4 h-[2px] bg-gradient-to-r from-transparent via-indigo-500 to-transparent" />
 
@@ -238,7 +278,7 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-slate-900 dark:text-white">AI Co-Pilot Settings</h2>
+                <h2 id="ai-settings-title" className="text-base font-bold text-slate-900 dark:text-white">AI Co-Pilot Settings</h2>
                 <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
                   Multi-Provider
                 </span>
@@ -250,7 +290,11 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
           </div>
 
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Close AI settings"
+            title="Close settings (Esc)"
+            disabled={saving}
             className="p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -259,12 +303,20 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
 
         {/* Body Form */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {configLoading && <div className="ai-settings-status" role="status">Loading your saved provider settings…</div>}
+          {requestError && (
+            <div className="ai-settings-error" role="alert">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{requestError}</span>
+              <button type="button" onClick={() => setRequestError(null)} aria-label="Dismiss error">Dismiss</button>
+            </div>
+          )}
           {/* Provider Selection Grid */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5">
               1. Select LLM Engine Provider
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="ai-provider-grid grid grid-cols-2 sm:grid-cols-4 gap-2.5" role="group" aria-label="AI provider">
               {(Object.keys(PROVIDER_PRESETS) as Array<'ollama' | 'openai' | 'deepseek' | 'custom'>).map((key) => {
                 const p = PROVIDER_PRESETS[key];
                 const isSelected = provider === key;
@@ -273,6 +325,8 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
                     key={key}
                     type="button"
                     onClick={() => handleSelectProvider(key)}
+                    disabled={configLoading || testingConnection || fetchingModels || saving}
+                    aria-pressed={isSelected}
                     className={`flex flex-col items-center text-center p-3 rounded-xl border transition-all ${
                       isSelected
                         ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/40 text-slate-900 dark:text-white shadow-sm shadow-indigo-500/20'
@@ -293,7 +347,7 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
             {/* Base URL */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <label htmlFor="ai-base-url" className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                   <Globe className="w-3.5 h-3.5 text-indigo-500" />
                   <span>API Base Endpoint URL</span>
                 </label>
@@ -306,9 +360,12 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
                 </button>
               </div>
               <input
+                id="ai-base-url"
                 type="text"
+                autoComplete="url"
+                spellCheck={false}
                 value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
+                onChange={(e) => { setBaseUrl(e.target.value); setRequestError(null); }}
                 placeholder={PROVIDER_PRESETS[provider].defaultUrl}
                 className="w-full px-3 py-2 rounded-lg text-xs font-mono bg-slate-50 dark:bg-[#050811] border border-slate-200 dark:border-white/[0.12] text-slate-900 dark:text-slate-100 focus:outline-none focus:border-indigo-500 transition-colors"
               />
@@ -318,7 +375,7 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
             {PROVIDER_PRESETS[provider].requiresKey && (
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <label htmlFor="ai-api-key" className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                     <Key className="w-3.5 h-3.5 text-amber-500" />
                     <span>API Secret Key</span>
                   </label>
@@ -330,15 +387,19 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
                 </div>
                 <div className="relative">
                   <input
+                    id="ai-api-key"
                     type={showKey ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    spellCheck={false}
                     value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
+                    onChange={(e) => { setApiKey(e.target.value); setRequestError(null); }}
                     placeholder={hasExistingKey ? 'Leave blank to retain saved key, or type new key...' : 'sk-...'}
                     className="w-full pr-10 pl-3 py-2 rounded-lg text-xs font-mono bg-slate-50 dark:bg-[#050811] border border-slate-200 dark:border-white/[0.12] text-slate-900 dark:text-slate-100 focus:outline-none focus:border-indigo-500 transition-colors"
                   />
                   <button
                     type="button"
                     onClick={() => setShowKey(!showKey)}
+                    aria-label={showKey ? 'Hide API key' : 'Show API key'}
                     className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                   >
                     {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -350,7 +411,7 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
             {/* Model Selection */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <label htmlFor="ai-model" className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                   <Cpu className="w-3.5 h-3.5 text-violet-500" />
                   <span>Target LLM Model</span>
                 </label>
@@ -358,7 +419,7 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
                   <button
                     type="button"
                     onClick={handleFetchModels}
-                    disabled={fetchingModels}
+                    disabled={fetchingModels || configLoading || testingConnection || saving}
                     className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 disabled:opacity-50"
                   >
                     <RefreshCw className={`w-3 h-3 ${fetchingModels ? 'animate-spin' : ''}`} />
@@ -377,16 +438,18 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
 
               {isCustomModel ? (
                 <input
+                  id="ai-model"
                   type="text"
                   value={model}
-                  onChange={(e) => setModel(e.target.value)}
+                  onChange={(e) => { setModel(e.target.value); setRequestError(null); }}
                   placeholder="e.g. qwen2.5:14b or gpt-4o"
                   className="w-full px-3 py-2 rounded-lg text-xs font-mono bg-slate-50 dark:bg-[#050811] border border-slate-200 dark:border-white/[0.12] text-slate-900 dark:text-slate-100 focus:outline-none focus:border-indigo-500 transition-colors"
                 />
               ) : (
                 <select
+                  id="ai-model"
                   value={model}
-                  onChange={(e) => setModel(e.target.value)}
+                  onChange={(e) => { setModel(e.target.value); setRequestError(null); }}
                   className="w-full px-3 py-2 rounded-lg text-xs font-mono bg-slate-50 dark:bg-[#050811] border border-slate-200 dark:border-white/[0.12] text-slate-900 dark:text-slate-100 focus:outline-none focus:border-indigo-500 transition-colors"
                 >
                   {availableModels.map((m) => (
@@ -439,7 +502,7 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
           <button
             type="button"
             onClick={handleTestConnection}
-            disabled={testingConnection || saving}
+            disabled={testingConnection || saving || configLoading || !baseUrl.trim() || !model.trim()}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-300 dark:border-white/[0.12] transition-colors disabled:opacity-50"
           >
             <Zap className={`w-3.5 h-3.5 text-amber-500 ${testingConnection ? 'animate-pulse' : ''}`} />
@@ -450,6 +513,7 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
             <button
               type="button"
               onClick={onClose}
+              disabled={saving}
               className="px-4 py-2 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 transition-colors"
             >
               Cancel
@@ -457,7 +521,7 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
             <button
               type="button"
               onClick={handleSave}
-              disabled={saving}
+              disabled={saving || configLoading || !baseUrl.trim() || !model.trim()}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow-md shadow-indigo-500/25 transition-all disabled:opacity-50"
             >
               {saveSuccess ? (

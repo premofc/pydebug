@@ -22,6 +22,15 @@ describe('DashboardPage Component', () => {
       first_func: 'verify_period',
       stats: { total_events: 10, duration_ms: 5.2 },
     },
+    {
+      id: 'sess_3',
+      title: 'POST /api/claims/live',
+      created_at: '2026-10-26T12:06:00Z',
+      tag: 'FastAPI Endpoint',
+      status: 'Running',
+      first_func: 'live_claim',
+      stats: { total_events: 8, duration_ms: 0 },
+    },
   ];
 
   const mockFunctions = [
@@ -68,6 +77,12 @@ describe('DashboardPage Component', () => {
       expect(screen.getByText('[MCP] claimcare_verify_waiting_period')).toBeInTheDocument();
       expect(screen.getByText('POST /api/claims/adjudicate')).toBeInTheDocument();
     });
+  });
+
+  it('styles in-flight API traces as running instead of successful', async () => {
+    render(<DashboardPage onSelectSession={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('Running')).toBeInTheDocument());
+    expect(screen.getByText('Running').className).toContain('bg-sky-500/10');
   });
 
   it('filters sessions by search query input', async () => {

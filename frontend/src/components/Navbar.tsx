@@ -1,4 +1,5 @@
 import React from 'react';
+import { Activity, Bot, Bug, Code2, Eye, FlaskConical, Moon, Sun } from 'lucide-react';
 import type { ThemeMode, AIProviderConfig, PageId } from '../types';
 
 interface NavbarProps {
@@ -6,11 +7,7 @@ interface NavbarProps {
   onToggleTheme: () => void;
   currentPage: PageId;
   onPageChange: (page: PageId) => void;
-  stats?: {
-    total_events: number;
-    duration_ms: number;
-    max_depth: number;
-  };
+  stats?: { total_events: number; duration_ms: number; max_depth: number };
   isConnected?: boolean;
   sessionId?: string;
   activeFileName?: string;
@@ -19,71 +16,60 @@ interface NavbarProps {
   onOpenAiSettings?: () => void;
 }
 
+const pages: { id: PageId; label: string; shortLabel: string; icon: React.ElementType }[] = [
+  { id: 'dashboard', label: 'Overview', shortLabel: 'Home', icon: Activity },
+  { id: 'hunter', label: 'Timeline Replay', shortLabel: 'Replay', icon: Bug },
+  { id: 'birdseye', label: 'Expression Flow', shortLabel: 'Flow', icon: Eye },
+  { id: 'playground', label: 'Live Sandbox', shortLabel: 'Sandbox', icon: FlaskConical },
+];
+
 export const Navbar: React.FC<NavbarProps> = ({
-  theme,
-  onToggleTheme,
-  onPageChange,
-  activeFileName,
-  activeFunctionName,
-  onOpenAiSettings,
-}) => {
-  return (
-    <header className="glass-nav-top w-full h-12 px-4 flex items-center justify-between gap-3 select-none z-50 sticky top-0 transition-all">
-      {/* Brand & Breadcrumbs (Clean, Unique, Minimalist - exact match to HTML mockup) */}
-      <div className="flex items-center gap-3.5 min-w-0">
-        {/* Brand */}
-        <div
-          onClick={() => onPageChange('dashboard')}
-          className="flex items-center gap-1.5 cursor-pointer group shrink-0"
-        >
-          <span className="text-amber-500 font-bold text-sm">⚡</span>
-          <span className="font-extrabold text-[13.5px] tracking-tight text-slate-900 dark:text-white">PyDebug</span>
-        </div>
+  theme, onToggleTheme, currentPage, onPageChange, isConnected = false,
+  activeFileName, activeFunctionName, aiConfig, onOpenAiSettings,
+}) => (
+  <header className="top-navbar">
+    <button type="button" className="brand-link" onClick={() => onPageChange('dashboard')} aria-label="PyDebug home">
+      <span className="brand-mark"><Code2 size={17} strokeWidth={2.5} /></span>
+      <span className="brand-name">PyDebug<span className="brand-studio">STUDIO</span></span>
+    </button>
 
-        {/* 6000 Online Status Dot */}
-        <div className="inline-flex items-center gap-1.5 font-mono text-[10px] text-emerald-500 font-semibold shrink-0">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span>6000 Online</span>
-        </div>
-
-        {/* Dynamic Breadcrumbs */}
-        <nav className="flex items-center gap-1.5 text-[11.5px] min-w-0 truncate">
-          <span className="text-slate-400 opacity-50 shrink-0">/</span>
-          {/* File pill */}
-          <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 dark:border-white/10 bg-slate-100/50 dark:bg-white/[0.04] text-slate-800 dark:text-slate-200 font-mono text-[11px] font-semibold shrink-0 cursor-pointer hover:border-indigo-500/40">
-            <span>📁</span>
-            <span>{activeFileName || 'policy_benefit.py'}</span>
-            <span className="text-[8px] opacity-60">▼</span>
-          </div>
-          <span className="text-slate-400 opacity-50 shrink-0">/</span>
-          <span className="font-mono text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 truncate">
-            {activeFunctionName ? `${activeFunctionName}()` : 'get_all_policy_benefits()'}
-          </span>
-        </nav>
-      </div>
-
-      {/* Right Controls: AI Engine chip + Theme toggle (no duplicate view tabs) */}
-      <div className="flex items-center gap-2 shrink-0">
+    <nav className="primary-nav" aria-label="Primary">
+      {pages.map(({ id, label, shortLabel, icon: Icon }) => (
         <button
-          onClick={onOpenAiSettings}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-slate-200 dark:border-white/10 bg-slate-100/50 dark:bg-white/[0.04] hover:bg-slate-200/50 dark:hover:bg-white/[0.08] text-xs font-semibold text-slate-700 dark:text-slate-300 transition-all cursor-pointer shadow-xs"
-          title="Configure AI Engine"
+          type="button"
+          key={id}
+          onClick={() => onPageChange(id)}
+          className={`primary-nav-item ${currentPage === id ? 'active' : ''}`}
+          aria-current={currentPage === id ? 'page' : undefined}
+          title={label}
         >
-          <span className="text-amber-400">✨</span>
-          <span>AI Engine</span>
+          <Icon size={15} strokeWidth={1.9} />
+          <span className="nav-full-label">{label}</span>
+          <span className="nav-short-label">{shortLabel}</span>
         </button>
+      ))}
+    </nav>
 
-        <button
-          onClick={onToggleTheme}
-          aria-label="Toggle theme"
-          className="p-1.5 rounded border border-slate-200 dark:border-white/10 bg-slate-100/50 dark:bg-white/[0.04] hover:bg-slate-200/50 dark:hover:bg-white/[0.08] text-slate-700 dark:text-slate-300 transition-all cursor-pointer"
-          title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} mode`}
-        >
-          {theme === 'dark' ? <span>☀️</span> : <span>🌙</span>}
-        </button>
+    <div className="nav-right">
+      {activeFileName && (
+        <div className="nav-context" title={activeFunctionName ? `${activeFileName} · ${activeFunctionName}()` : activeFileName}>
+          <span className="context-file">{activeFileName}</span>
+          {activeFunctionName && <><span className="context-divider">/</span><span className="context-function">{activeFunctionName}()</span></>}
+        </div>
+      )}
+      <div className={`connection-status ${isConnected ? 'connected' : ''}`} title={isConnected ? 'Connected to the local tracer' : 'Waiting for the local tracer'}>
+        <span className="connection-indicator" />
+        <span>{isConnected ? 'Connected' : 'Offline'}</span>
       </div>
-    </header>
-  );
-};
+      <button type="button" onClick={onOpenAiSettings} className="nav-action ai-action" aria-label="AI engine settings" aria-haspopup="dialog" aria-controls="ai-settings-dialog" title={aiConfig?.model ? `AI engine · ${aiConfig.model}` : 'Configure AI engine'}>
+        <Bot size={16} />
+        <span>AI engine</span>
+      </button>
+      <button type="button" onClick={onToggleTheme} className="nav-action theme-action" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>
+        {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+      </button>
+    </div>
+  </header>
+);
 
 export default Navbar;

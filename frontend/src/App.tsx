@@ -7,19 +7,24 @@ import { HunterPage } from './pages/HunterPage';
 import { PlaygroundPage } from './pages/PlaygroundPage';
 import type { TraceSession, ThemeMode, AIProviderConfig, FunctionSignature, PageId } from './types';
 
-export const EMPTY_TRACE_SESSION: TraceSession = {
+const EMPTY_TRACE_SESSION: TraceSession = {
   id: '',
   title: '',
   created_at: '',
   files: [],
-  file_sources: [],
+  file_sources: {},
   events: [],
   stats: { total_events: 0, files_count: 0, duration_ms: 0, max_depth: 0 },
 };
 
 export const App: React.FC = () => {
   const [theme, setTheme] = useState<ThemeMode>(() => {
-    return (localStorage.getItem('pydebug_theme') as ThemeMode) || 'dark';
+    try {
+      const stored = localStorage.getItem('pydebug_theme');
+      return stored === 'light' || stored === 'dark' ? stored : 'dark';
+    } catch {
+      return 'dark';
+    }
   });
   const [currentPage, setCurrentPage] = useState<PageId>(() => {
     const hash = window.location.hash.replace('#', '') as PageId;
@@ -72,7 +77,8 @@ export const App: React.FC = () => {
     } else {
       root.classList.remove('dark');
     }
-    localStorage.setItem('pydebug_theme', theme);
+    root.style.colorScheme = theme;
+    try { localStorage.setItem('pydebug_theme', theme); } catch { /* Storage may be disabled by browser policy. */ }
   }, [theme]);
 
   // Stable handlers: new-identity props would re-trigger the pages'
@@ -84,6 +90,8 @@ export const App: React.FC = () => {
     );
   }, []);
   const openAiSettings = useCallback(() => setIsAiModalOpen(true), []);
+  const closeAiSettings = useCallback(() => setIsAiModalOpen(false), []);
+  const consumePendingPlaygroundFunc = useCallback(() => setPendingPlaygroundFunc(null), []);
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
@@ -97,7 +105,7 @@ export const App: React.FC = () => {
           const cfg: AIProviderConfig = await res.json();
           setAiConfig(cfg);
         }
-      } catch (e) {
+      } catch {
         // Fallback default
         setAiConfig({
           provider: 'ollama',
@@ -112,19 +120,20 @@ export const App: React.FC = () => {
   // Fetch initial session and subscribe to SSE stream
   useEffect(() => {
     let sse: EventSource | null = null;
+    let isUnmounted = false;
 
     const fetchLatestSession = async () => {
       try {
         const res = await fetch('/api/session');
         if (res.ok) {
           const data = await res.json();
-          if (data && data.events && data.events.length > 0) {
+          if (!isUnmounted && data && Array.isArray(data.events) && data.events.length > 0) {
             setSession(data);
             setHasRealSession(true);
             setIsConnected(true);
             const firstEv = data.events[0];
             if (firstEv) {
-              const fname = data.files[firstEv.file_idx] || 'script.py';
+              const fname = (Array.isArray(data.files) && data.files[firstEv.file_idx]) || 'script.py';
               setActiveFileInfo({
                 fileName: fname.split(/[\\/]/).pop() || fname,
                 funcName: firstEv.func,
@@ -132,14 +141,13 @@ export const App: React.FC = () => {
             }
           }
         }
-      } catch (err) {
+      } catch {
         console.log('Using default mock trace session.');
       }
     };
 
     fetchLatestSession();
 
-    let isUnmounted = false;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
     const connectSSE = () => {
@@ -154,8 +162,13 @@ export const App: React.FC = () => {
               setSession(payload.session);
               setHasRealSession(true);
               setIsConnected(true);
+              const firstEv = payload.session.events?.[0];
+              if (firstEv) {
+                const fname = payload.session.files?.[firstEv.file_idx] || 'script.py';
+                setActiveFileInfo({ fileName: fname.split(/[\\/]/).pop() || fname, funcName: firstEv.func || '' });
+              }
             }
-          } catch (err) {
+          } catch {
             // ignore keepalive pings
           }
         };
@@ -170,7 +183,7 @@ export const App: React.FC = () => {
             reconnectTimeout = setTimeout(connectSSE, 5000);
           }
         };
-      } catch (err) {
+      } catch {
         setIsConnected(false);
         if (!isUnmounted) {
           reconnectTimeout = setTimeout(connectSSE, 5000);
@@ -192,13 +205,14 @@ export const App: React.FC = () => {
     targetView: PageId
   ) => {
     try {
-      const res = await fetch(`/api/session?id=${sessionId}`);
+      const res = await fetch(`/api/session?id=${encodeURIComponent(sessionId)}`);
       if (res.ok) {
-        const data = await res.json();
+        const data: TraceSession = await res.json();
         setSession(data);
-        const firstEv = data.events[0];
+        setHasRealSession(true);
+        const firstEv = data.events?.[0];
         if (firstEv) {
-          const fname = data.files[firstEv.file_idx] || 'script.py';
+          const fname = data.files?.[firstEv.file_idx] || 'script.py';
           setActiveFileInfo({
             fileName: fname.split(/[\\/]/).pop() || fname,
             funcName: firstEv.func,
@@ -208,18 +222,12 @@ export const App: React.FC = () => {
     } catch (err) {
       console.error('Error fetching selected session:', err);
     }
-    setCurrentPage(targetView);
+    changePage(targetView);
   };
 
-  const navItems = [
-    { id: 'dashboard' as const, label: 'Dashboard', emoji: '📊' },
-    { id: 'hunter' as const, label: 'Timeline Replay', emoji: '▶' },
-    { id: 'birdseye' as const, label: 'Expression Flow', emoji: '👁' },
-    { id: 'playground' as const, label: 'Live Sandbox', emoji: '🧪' },
-  ];
-
   return (
-    <div className="h-screen w-screen flex flex-col overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors relative">
+    <div className="app-shell h-screen w-screen flex flex-col overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors relative">
+      <div className="app-content flex flex-1 min-h-0 flex-col overflow-hidden" inert={isAiModalOpen}>
       <Navbar
         theme={theme}
         onToggleTheme={toggleTheme}
@@ -249,7 +257,7 @@ export const App: React.FC = () => {
             aiConfig={aiConfig}
             onTryFunction={(fn) => {
               setPendingPlaygroundFunc(fn);
-              setCurrentPage('playground');
+              changePage('playground');
             }}
           />
         )}
@@ -257,7 +265,7 @@ export const App: React.FC = () => {
           <BirdseyePage
             session={session}
             onCallChange={handleActiveFileChange}
-            onOpenSandbox={() => setCurrentPage('playground')}
+            onOpenSandbox={() => changePage('playground')}
           />
         )}
         {currentPage === 'hunter' && (
@@ -266,7 +274,7 @@ export const App: React.FC = () => {
             onEventChange={handleActiveFileChange}
             aiConfig={aiConfig}
             onOpenAiSettings={openAiSettings}
-            onOpenSandbox={() => setCurrentPage('playground')}
+            onOpenSandbox={() => changePage('playground')}
           />
         )}
         {currentPage === 'playground' && (
@@ -284,42 +292,18 @@ export const App: React.FC = () => {
                 });
               }
             }}
-            onNavigateToHunter={() => setCurrentPage('hunter')}
+            onNavigateToHunter={() => changePage('hunter')}
             initialFunction={pendingPlaygroundFunc}
-            onConsumeInitialFunction={() => setPendingPlaygroundFunc(null)}
+            onConsumeInitialFunction={consumePendingPlaygroundFunc}
           />
         )}
       </main>
-
-      {/* Floating Bottom Quick Navigation Dock (Exact match to HTML mockup) */}
-      <nav
-        aria-label="Bottom Navigation Dock"
-        className="fixed bottom-3.5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 p-1 rounded-full glass-dock-bottom shadow-2xl select-none"
-      >
-        {navItems.map((item) => {
-          const isActive = currentPage === item.id;
-          return (
-            <button
-              key={`dock-${item.id}`}
-              onClick={() => changePage(item.id)}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-150 cursor-pointer ${
-                isActive
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 scale-105'
-                  : 'text-slate-400 hover:text-slate-100 hover:bg-white/10'
-              }`}
-              title={`Switch to ${item.label}`}
-            >
-              <span>{item.emoji}</span>
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
-      </nav>
+      </div>
 
       {/* Modern AI Co-Pilot Provider Configuration Modal */}
       <AiSettingsModal
         isOpen={isAiModalOpen}
-        onClose={() => setIsAiModalOpen(false)}
+        onClose={closeAiSettings}
         onConfigSaved={(updated) => setAiConfig(updated)}
       />
     </div>

@@ -106,6 +106,17 @@ class TestSessionMetadataInference:
         assert meta["tag"] == "MCP Tool"
         assert meta["status"] == "Success"
 
+        mcp_tool = TraceSession(title="[MCP Tool] claimcare_check_benefits")
+        mcp_tool.stats["tag"] = "MCP Tool"
+        assert infer_session_metadata(mcp_tool)["tag"] == "MCP Tool"
+
+    def test_api_metadata_uses_actual_response_status(self):
+        session = TraceSession(title="POST /api/claims")
+        session.stats["status_code"] = 422
+        meta = infer_session_metadata(session)
+        assert meta["tag"] == "FastAPI Endpoint"
+        assert meta["status"] == "422 Error"
+
     def test_playground_run_inference(self):
         s = TraceSession(title="Live Run: calculate_tax()")
         meta = infer_session_metadata(s)
@@ -212,17 +223,23 @@ class OrderService:
         assert async_f["is_async"] is True
 
 
+_TEST_SERVER: QuietThreadingHTTPServer | None = None
+
+
 @pytest.fixture(scope="module")
 def app_server_url():
+    global _TEST_SERVER
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind(('127.0.0.1', 0))
     port = sock.getsockname()[1]
     sock.close()
 
     server = serve_trace(session=None, port=port, auto_open=False, block=False)
+    _TEST_SERVER = server
     time.sleep(0.4)
     yield f"http://127.0.0.1:{port}"
     try:
+        server.shutdown()
         server.server_close()
     except Exception:
         pass
@@ -236,6 +253,66 @@ class TestHttpServerEndpoints:
             data = json.loads(resp.read().decode())
             assert data["status"] == "ok"
             assert data["service"] == "pydebug"
+            assert resp.headers.get("Access-Control-Allow-Origin") is None
+            assert resp.headers.get("X-Content-Type-Options") == "nosniff"
+
+    def test_ui_response_has_restrictive_browser_security_headers(self, app_server_url):
+        with urllib.request.urlopen(f"{app_server_url}/", timeout=3.0) as resp:
+            assert resp.status == 200
+            assert "default-src 'self'" in resp.headers.get("Content-Security-Policy", "")
+            assert "frame-ancestors 'none'" in resp.headers.get("Content-Security-Policy", "")
+            assert resp.headers.get("Referrer-Policy") == "no-referrer"
+
+    def test_server_is_loopback_only_and_rejects_cross_site_requests(self, app_server_url):
+        from urllib.parse import urlparse
+
+        assert _TEST_SERVER is not None
+        assert _TEST_SERVER.server_address[0] == "127.0.0.1"
+        assert urlparse(app_server_url).port == _TEST_SERVER.server_port
+
+        req = urllib.request.Request(
+            f"{app_server_url}/api/health",
+            headers={"Origin": "https://attacker.example", "Sec-Fetch-Site": "cross-site"},
+        )
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen(req, timeout=3.0)
+        assert exc_info.value.code == 403
+
+        spoofed_host = urllib.request.Request(
+            f"{app_server_url}/api/health",
+            headers={"Host": "attacker.example"},
+        )
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen(spoofed_host, timeout=3.0)
+        assert exc_info.value.code == 403
+
+        dev_req = urllib.request.Request(
+            f"{app_server_url}/api/health",
+            headers={"Origin": "http://localhost:5173", "Sec-Fetch-Site": "same-origin"},
+        )
+        with urllib.request.urlopen(dev_req, timeout=3.0) as resp:
+            assert resp.status == 200
+
+    def test_rejects_oversized_and_non_object_json_payloads(self, app_server_url):
+        oversized = urllib.request.Request(
+            f"{app_server_url}/api/sessions",
+            data=b"{}",
+            headers={"Content-Type": "application/json", "Content-Length": str(32 * 1024 * 1024 + 1)},
+            method="POST",
+        )
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen(oversized, timeout=3.0)
+        assert exc_info.value.code == 413
+
+        non_object = urllib.request.Request(
+            f"{app_server_url}/api/sessions",
+            data=b"[]",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen(non_object, timeout=3.0)
+        assert exc_info.value.code == 400
 
     def test_api_sessions_get_and_post(self, app_server_url):
         # Post a new session
@@ -394,6 +471,13 @@ class TestHttpServerEndpoints:
         pos, kw = PyDebugHandler._parse_invocation_args(call_expr="10, rate=0.15")
         assert pos == [10]
         assert kw["rate"] == 0.15
+
+        # Expressions are parsed as argument text, never evaluated by the server.
+        pos, kw = PyDebugHandler._parse_invocation_args(
+            call_expr="__import__('os').system('echo should-not-run')"
+        )
+        assert pos == ["echo should-not-run"]
+        assert kw == {}
 
     def test_api_execute_function_with_call_expr(self, app_server_url, tmp_path):
         target_py = tmp_path / "sandbox_demo_expr.py"

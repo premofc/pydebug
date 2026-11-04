@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import ast
+import ipaddress
 import importlib.util
 import json
 import logging
@@ -151,18 +152,29 @@ def infer_session_metadata(session: TraceSession) -> dict[str, Any]:
 
     # Check if the execution ended with an unhandled exception
     has_uncaught_error = bool(session.events and session.events[-1].kind == "exception")
+    recorded_tag = session.stats.get("tag")
 
-    if any(title.startswith(m) for m in ("GET ", "POST ", "PUT ", "DELETE ", "PATCH ")):
+    if recorded_tag in {"MCP Tool", "FastAPI Endpoint", "Server Startup", "Script Run", "Python Script"}:
+        tag = recorded_tag
+    elif any(title.startswith(m) for m in ("GET ", "POST ", "PUT ", "DELETE ", "PATCH ")):
         tag = "FastAPI Endpoint"
-        status = "500 Error" if has_uncaught_error else "200 OK"
-    elif title.startswith("MCP:") or title.startswith("MCP Tool:") or title.startswith("[MCP]"):
+    elif title.startswith("MCP:") or title.startswith("MCP Tool:") or title.startswith("[MCP"):
         tag = "MCP Tool"
-        status = "Error" if has_uncaught_error else "Success"
     elif "Live Run:" in title or "Live Test:" in title:
         tag = "Playground Run"
-        status = "Error" if has_uncaught_error else "Success"
     else:
         tag = "Python Script"
+
+    status_code = session.stats.get("status_code")
+    if session.stats.get("in_progress"):
+        status = "Running"
+    elif tag == "FastAPI Endpoint":
+        status = (
+            f"{status_code} {'Error' if status_code >= 400 else 'OK'}"
+            if isinstance(status_code, int)
+            else ("500 Error" if has_uncaught_error else "200 OK")
+        )
+    else:
         status = "Error" if has_uncaught_error else "Success"
 
     return {
@@ -485,10 +497,52 @@ def find_function_references(func_name: str, target_file: str) -> list[dict[str,
 class PyDebugHandler(BaseHTTPRequestHandler):
     """HTTP Request Handler serving PyDebug Studio, REST endpoints, and Ollama AI."""
 
+    MAX_REQUEST_BYTES = 32 * 1024 * 1024
+    DEV_ORIGINS = {"http://localhost:5173", "http://127.0.0.1:5173"}
+
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         pass
 
+    def _is_trusted_local_request(self) -> bool:
+        """Reject remote clients, host-header rebinding, and cross-site browser requests."""
+        try:
+            if not ipaddress.ip_address(self.client_address[0]).is_loopback:
+                return False
+        except (ValueError, IndexError):
+            return False
+
+        host_header = self.headers.get("Host", "")
+        try:
+            host = urllib.parse.urlsplit(f"//{host_header}")
+            host_name = (host.hostname or "").rstrip(".").lower()
+            host_is_loopback = host_name == "localhost" or ipaddress.ip_address(host_name).is_loopback
+            host_port = host.port
+        except ValueError:
+            return False
+        if not host_is_loopback or host_port != self.server.server_port:
+            return False
+
+        fetch_site = self.headers.get("Sec-Fetch-Site")
+        if fetch_site and fetch_site not in ("same-origin", "none"):
+            return False
+
+        origin = self.headers.get("Origin")
+        if origin:
+            parsed_origin = urllib.parse.urlsplit(origin)
+            normalized_origin = f"{parsed_origin.scheme}://{parsed_origin.netloc}".rstrip("/").lower()
+            request_origin = f"http://{host_header}".rstrip("/").lower()
+            if normalized_origin != request_origin and not (
+                normalized_origin in self.DEV_ORIGINS and fetch_site == "same-origin"
+            ):
+                return False
+
+        return True
+
     def do_GET(self) -> None:  # noqa: N802
+        if not self._is_trusted_local_request():
+            self._send_json(403, b'{"error":"Local requests only"}')
+            return
+
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
@@ -524,6 +578,22 @@ class PyDebugHandler(BaseHTTPRequestHandler):
             self.send_error(404, "Not Found")
 
     def do_POST(self) -> None:  # noqa: N802
+        if not self._is_trusted_local_request():
+            self._send_json(403, b'{"error":"Local requests only"}')
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self._send_json(400, b'{"error":"Invalid Content-Length"}')
+            return
+        if length < 0:
+            self._send_json(400, b'{"error":"Invalid Content-Length"}')
+            return
+        if length > self.MAX_REQUEST_BYTES:
+            self._send_json(413, b'{"error":"Request body is too large"}')
+            return
+
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
@@ -578,6 +648,14 @@ class PyDebugHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-cache")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; "
+            "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+        )
         self.end_headers()
         self.wfile.write(body)
 
@@ -684,9 +762,14 @@ class PyDebugHandler(BaseHTTPRequestHandler):
     def _read_json_body(self) -> dict[str, Any]:
         """Reads and parses the JSON request body (empty dict when no body)."""
         length = int(self.headers.get("Content-Length", 0))
+        if length < 0 or length > self.MAX_REQUEST_BYTES:
+            raise ValueError("Request body is too large or has an invalid length")
         if length <= 0:
             return {}
-        return json.loads(self.rfile.read(length).decode("utf-8"))
+        payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("JSON request body must be an object")
+        return payload
 
     @staticmethod
     def _parse_invocation_args(
@@ -1082,8 +1165,9 @@ class PyDebugHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
         self.end_headers()
         self.wfile.write(body)
 
@@ -1100,7 +1184,7 @@ def serve_trace(
     if not logging.getLogger().handlers:
         logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(name)s: %(message)s")
 
-    server = QuietThreadingHTTPServer(("0.0.0.0", port), PyDebugHandler)
+    server = QuietThreadingHTTPServer(("127.0.0.1", port), PyDebugHandler)
     url = f"http://127.0.0.1:{port}"
     logger.info("Live Studio online: %s", url)
     ai = get_ai_manager()

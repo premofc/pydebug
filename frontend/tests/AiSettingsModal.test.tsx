@@ -34,6 +34,7 @@ describe('AiSettingsModal Component', () => {
     });
 
     render(<AiSettingsModal isOpen={true} onClose={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /Ollama/i })).toBeEnabled());
     expect(screen.getByText('AI Co-Pilot Settings')).toBeInTheDocument();
     expect(screen.getByText('Ollama')).toBeInTheDocument();
     expect(screen.getByText('OpenAI')).toBeInTheDocument();
@@ -59,6 +60,10 @@ describe('AiSettingsModal Component', () => {
     });
 
     render(<AiSettingsModal isOpen={true} onClose={vi.fn()} />);
+
+    // Wait for the saved provider config before allowing a user override.
+    const openAiButton = screen.getByRole('button', { name: /OpenAI/i });
+    await waitFor(() => expect(openAiButton).toBeEnabled());
 
     // Click OpenAI provider button
     const openaiBtn = screen.getByText('OpenAI');
@@ -96,6 +101,7 @@ describe('AiSettingsModal Component', () => {
     render(<AiSettingsModal isOpen={true} onClose={vi.fn()} />);
 
     const testBtn = screen.getByText('Test Connection');
+    await waitFor(() => expect(testBtn).toBeEnabled());
     fireEvent.click(testBtn);
 
     await waitFor(() => {
@@ -104,12 +110,26 @@ describe('AiSettingsModal Component', () => {
     }, { timeout: 8000 });
   }, 12000);
 
-  it('calls onClose when Cancel is clicked', () => {
+  it('calls onClose when Cancel is clicked', async () => {
     const onClose = vi.fn();
     render(<AiSettingsModal isOpen={true} onClose={onClose} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /Ollama/i })).toBeEnabled());
 
     const cancelBtn = screen.getByText('Cancel');
     fireEvent.click(cancelBtn);
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('shows a recoverable message when saved settings fail to load', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: () => Promise.resolve({ error: 'Settings service is unavailable.' }),
+    });
+
+    render(<AiSettingsModal isOpen={true} onClose={vi.fn()} />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Settings service is unavailable.');
+    expect(screen.getByRole('button', { name: /dismiss error/i })).toBeInTheDocument();
   });
 });

@@ -102,8 +102,8 @@ describe('PlaygroundPage Component', () => {
 
     expect(screen.getByText(/Python Invocation Expression/i)).toBeInTheDocument();
     expect(screen.getByText(/Parameters \(2\)/i)).toBeInTheDocument();
-    expect(screen.getByText('amount')).toBeInTheDocument();
-    expect(screen.getByText('rate')).toBeInTheDocument();
+    expect(screen.getByLabelText('amount')).toBeInTheDocument();
+    expect(screen.getByLabelText('rate')).toBeInTheDocument();
   });
 
   it('allows customizing parameter inputs and updates call expression', async () => {
@@ -186,7 +186,7 @@ describe('PlaygroundPage Component', () => {
     fireEvent.click(executeBtn);
 
     await waitFor(() => {
-      expect(screen.getByText(/Execution Succeeded \(200 OK\)/i)).toBeInTheDocument();
+      expect(screen.getByText(/Execution Succeeded \(/i)).toBeInTheDocument();
       expect(screen.getByText('10.0')).toBeInTheDocument();
       expect(onSessionUpdated).toHaveBeenCalledWith(updatedSession);
       expect(screen.getByText(/View in Timeline Replay/i)).toBeInTheDocument();
@@ -276,7 +276,7 @@ describe('PlaygroundPage Component', () => {
       expect(screen.getByText(/Failed at Line 14/i)).toBeInTheDocument();
     });
 
-    const inspectBtn = screen.getByText('🎯 Inspect Failure Line in Timeline');
+    const inspectBtn = screen.getByText('🎯 Inspect Failure Line in Timeline Replay');
     fireEvent.click(inspectBtn);
     expect(onNavigateToHunter).toHaveBeenCalled();
   });
@@ -374,10 +374,10 @@ describe('PlaygroundPage Component', () => {
     fireEvent.click(executeBtn);
 
     await waitFor(() => {
-      expect(screen.getAllByText(/Logs \(3\)/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText(/View Logs \(3\)/i)).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getAllByText(/Logs \(3\)/i)[0]);
+    fireEvent.click(screen.getByText(/View Logs \(3\)/i));
 
     expect(screen.getByText('Starting tax calculation')).toBeInTheDocument();
     expect(screen.getByText('Tax rate applied: 0.15')).toBeInTheDocument();
@@ -424,7 +424,7 @@ describe('PlaygroundPage Component', () => {
     fireEvent.click(refTabBtn);
 
     await waitFor(() => {
-      expect(screen.getByText(/Callers & Usages/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/Callers & Usages/i).length).toBeGreaterThan(0);
       expect(screen.getByText('main.py')).toBeInTheDocument();
       expect(screen.getByText(':L25')).toBeInTheDocument();
       expect(screen.getByText('run_invoice()')).toBeInTheDocument();

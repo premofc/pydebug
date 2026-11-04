@@ -22,23 +22,18 @@ from typing import Any, Callable
 
 from pydebug.core.events import TraceSession
 from pydebug.core.tracer import PyTracer, capture_logs, safe_repr
+from pydebug.integrations.live import LiveSessionPublisher
 
 logger = logging.getLogger("pydebug.mcp")
 
 
 def _sync_session_to_studio(session: TraceSession, port: int) -> None:
-    """Posts a completed trace session snapshot to PyDebug Studio."""
+    """Posts a completed snapshot, retaining it locally when Studio is offline."""
     try:
         session.compute_stats()
-        # Direct in-process session manager injection if available in same process
-        try:
-            from pydebug.server.app import get_session_manager
-            get_session_manager().add_session(session)
-            return
-        except Exception:
-            pass
-
-        # Otherwise HTTP POST to Studio listener
+        # Publish to the actual Studio listener first. The MCP server and the
+        # viewer may be separate processes, so a process-local store is not
+        # evidence that the UI received this session.
         data = json.dumps(session.to_dict()).encode("utf-8")
         req = urllib.request.Request(
             f"http://127.0.0.1:{port}/api/sessions",
@@ -50,6 +45,11 @@ def _sync_session_to_studio(session: TraceSession, port: int) -> None:
             pass
     except Exception as e:
         logger.debug("Failed to sync MCP tool session to studio: %s", e)
+        try:
+            from pydebug.server.app import get_session_manager
+            get_session_manager().add_session(session)
+        except Exception:
+            pass
 
 
 def instrument_mcp_tool(
@@ -76,6 +76,8 @@ def instrument_mcp_tool(
             session = TraceSession(title=sess_title)
             tracer = PyTracer(session=session, include_paths=include_paths)
             tracer.start()
+            publisher = LiveSessionPublisher(tracer, server_port)
+            publisher.start()
             start_t = time.time()
             err: Exception | None = None
             ret_val: Any = None
@@ -96,7 +98,12 @@ def instrument_mcp_tool(
                         session.stats["has_uncaught_error"] = True
                         session.stats["error_type"] = type(err).__name__
                         session.stats["error_message"] = str(err)
-                    _sync_session_to_studio(session, server_port)
+                    # Keep the capture available to code using the embedded
+                    # manager while the publisher forwards it to a possibly
+                    # separate Studio process.
+                    from pydebug.server.app import get_session_manager
+                    get_session_manager().add_session(session)
+                    publisher.stop()
 
         return async_wrapper
 
@@ -107,6 +114,8 @@ def instrument_mcp_tool(
             session = TraceSession(title=sess_title)
             tracer = PyTracer(session=session, include_paths=include_paths)
             tracer.start()
+            publisher = LiveSessionPublisher(tracer, server_port)
+            publisher.start()
             start_t = time.time()
             err: Exception | None = None
             ret_val: Any = None
@@ -127,7 +136,9 @@ def instrument_mcp_tool(
                         session.stats["has_uncaught_error"] = True
                         session.stats["error_type"] = type(err).__name__
                         session.stats["error_message"] = str(err)
-                    _sync_session_to_studio(session, server_port)
+                    from pydebug.server.app import get_session_manager
+                    get_session_manager().add_session(session)
+                    publisher.stop()
 
         return sync_wrapper
 

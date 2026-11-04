@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 from pydebug.core.events import TraceSession
 from pydebug.core.tracer import PyTracer
-from pydebug.server.app import get_session_manager
+from pydebug.integrations.live import LiveSessionPublisher
 
 
 class PyDebugMiddleware:
@@ -73,6 +73,8 @@ class PyDebugMiddleware:
         session = TraceSession(title=session_title)
         tracer = PyTracer(session=session, include_paths=[self.project_root])
         tracer.start()
+        publisher = LiveSessionPublisher(tracer, self.server_port)
+        publisher.start()
 
         start_time = time.time()
         status_code = [200]
@@ -99,12 +101,10 @@ class PyDebugMiddleware:
                     session.title = f"[MCP] {fn_name} ({method} {path})"
                     break
 
-            # 1. Local in-process registration
-            mgr = get_session_manager()
-            mgr.add_session(session)
-
-            # 2. Remote listener forwarding (if PyDebug Studio is running on server_port)
-            self._forward_to_studio(session)
+            # Repeated snapshots make long-running requests visible while they
+            # are executing; stop() flushes final status and falls back to the
+            # local session store if the Studio listener is unavailable.
+            publisher.stop()
 
     def _forward_to_studio(self, session: TraceSession) -> None:
         try:

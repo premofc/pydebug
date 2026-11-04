@@ -14,7 +14,7 @@ import {
   FlaskConical,
   Activity
 } from 'lucide-react';
-import type { TraceSession, SubExpression, PinnedExpression } from '../types';
+import type { TraceSession, TraceEvent, SubExpression, PinnedExpression } from '../types';
 import { buildCallRecords, buildLineExprs, isFuturePending } from '../utils/calls';
 import type { CallRecord } from '../utils/calls';
 
@@ -26,10 +26,13 @@ interface BirdseyePageProps {
 
 export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChange, onOpenSandbox }) => {
   const [selectedCallId, setSelectedCallId] = useState<string | null>(null);
+  const [selectedEventSeq, setSelectedEventSeq] = useState<number | null>(null);
   const [searchFilter, setSearchFilter] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'flow' | 'values' | 'locals' | 'pinned'>('flow');
   const [selectedExprText, setSelectedExprText] = useState<string | null>(null);
   const [hoveredExpr, setHoveredExpr] = useState<SubExpression | null>(null);
+  const [hoveredLocalName, setHoveredLocalName] = useState<string | null>(null);
+  const [hoveredBranchEvent, setHoveredBranchEvent] = useState<TraceEvent | null>(null);
   const [pinnedList, setPinnedList] = useState<PinnedExpression[]>([]);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [expandedFuncs, setExpandedFuncs] = useState<Record<string, boolean>>({});
@@ -60,16 +63,16 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
     const best = calls.find((c) => c.expressions.length > 0);
     return best || calls[0];
   }, [calls, selectedCallId]);
+  const activeCallScrollLine = activeCall?.callLine ?? activeCall?.events[0]?.line ?? null;
+  const selectedStepIndex = activeCall?.events.findIndex((event) => event.seq === selectedEventSeq) ?? -1;
+  const selectedStep = selectedStepIndex >= 0 ? activeCall?.events[selectedStepIndex] ?? null : null;
 
   // Auto-scroll to active call's function definition or first executed line
   useEffect(() => {
-    if (activeCall) {
-      const targetLine = activeCall.callLine || (activeCall.events.length > 0 ? activeCall.events[0].line : null);
-      if (targetLine && lineRefs.current[targetLine]) {
-        lineRefs.current[targetLine]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
+    if (activeCallScrollLine && lineRefs.current[activeCallScrollLine]) {
+      lineRefs.current[activeCallScrollLine]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  }, [activeCall?.id]);
+  }, [activeCall?.id, activeCallScrollLine]);
 
   // Source lines for the active call's file
   const activeFileIdx = activeCall ? activeCall.file_idx : 0;
@@ -93,7 +96,20 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
     if (next >= 0 && next < currentFuncCalls.length) {
       setSelectedCallId(currentFuncCalls[next].id);
       setSelectedExprText(null);
+      setSelectedEventSeq(null);
     }
+  };
+
+  const focusEvent = (index: number) => {
+    const event = activeCall?.events[index];
+    if (!event) return;
+    setSelectedEventSeq(event.seq);
+    lineRefs.current[event.line]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  const focusTraceEvent = (event: TraceEvent) => {
+    const index = activeCall?.events.findIndex((item) => item.seq === event.seq) ?? -1;
+    if (index >= 0) focusEvent(index);
   };
 
   // Notify parent of active file / func
@@ -141,6 +157,14 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
     });
     return list;
   }, [activeCall]);
+  const currentLocals = selectedStep?.vars ?? activeCall?.events.at(-1)?.vars ?? activeCall?.args ?? {};
+  const inspectedEvent = selectedStep ?? activeCall?.events.at(-1) ?? null;
+  const inspectedDiffs = inspectedEvent?.vars_diff ?? {};
+  const latestEventByLine = useMemo(() => {
+    const map = new Map<number, TraceEvent>();
+    activeCall?.events.forEach((event) => map.set(event.line, event));
+    return map;
+  }, [activeCall]);
 
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -178,8 +202,8 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
 
   if (calls.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 font-sans">
-        <div className="max-w-md w-full p-8 rounded-2xl bg-white dark:bg-[#0c1220] border border-slate-200/80 dark:border-slate-800/80 shadow-xl flex flex-col items-center text-center">
+      <div className="expression-flow-empty flex-1 flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 font-sans">
+        <div className="expression-flow-empty-card max-w-md w-full p-8 rounded-2xl bg-white dark:bg-[#0c1220] border border-slate-200/80 dark:border-slate-800/80 shadow-xl flex flex-col items-center text-center">
           <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 flex items-center justify-center mb-4">
             <Eye className="w-7 h-7 text-indigo-500" />
           </div>
@@ -210,7 +234,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 font-sans transition-colors pb-20">
+    <div className="expression-flow-page flex-1 flex flex-col min-h-0 overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 font-sans transition-colors pb-20">
       <div className="flex-1 grid grid-cols-12 overflow-hidden">
         
         {/* COLUMN 1: Function Calls Sidebar (280px / 3 cols) */}
@@ -229,7 +253,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                 type="text"
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
-                placeholder="Filter calls / search functions..."
+                placeholder="Search functions, arguments, values…"
                 className="w-full bg-white dark:bg-[#050811] border border-slate-200 dark:border-white/[0.12] rounded-md pl-8 pr-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono transition-colors"
               />
             </div>
@@ -237,7 +261,12 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
 
           <div className="flex-1 overflow-y-auto p-2 space-y-2 font-mono text-xs">
             {Array.from(callsByFunc.entries())
-              .filter(([fn]) => !searchFilter || fn.toLowerCase().includes(searchFilter.toLowerCase()))
+              .filter(([fn, fnCalls]) => {
+                const query = searchFilter.trim().toLowerCase();
+                return !query || fn.toLowerCase().includes(query) || fnCalls.some((call) =>
+                  Object.entries(call.args).some(([name, value]) => `${name} ${value}`.toLowerCase().includes(query)),
+                );
+              })
               .map(([fn, fnCalls]) => {
                 const isExpanded = expandedFuncs[fn] !== false;
 
@@ -274,6 +303,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                               onClick={() => {
                                 setSelectedCallId(call.id);
                                 setSelectedExprText(null);
+                                setSelectedEventSeq(null);
                               }}
                               className={`p-2 rounded cursor-pointer transition-all ${
                                 isSelected
@@ -356,15 +386,29 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                 </button>
               </div>
             )}
+            {activeCall && activeCall.events.length > 0 && (
+              <div className="expression-step-control" aria-label="Expression execution steps">
+                <button type="button" onClick={() => focusEvent(selectedStepIndex <= 0 ? 0 : selectedStepIndex - 1)} disabled={selectedStepIndex <= 0} aria-label="Previous execution step" title="Previous execution step">
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <span aria-live="polite">
+                  {selectedStepIndex < 0 ? 'Choose a step' : `Step ${selectedStepIndex + 1} of ${activeCall.events.length}`}
+                </span>
+                <button type="button" onClick={() => focusEvent(selectedStepIndex < 0 ? 0 : selectedStepIndex + 1)} disabled={selectedStepIndex >= activeCall.events.length - 1} aria-label="Next execution step" title="Next execution step">
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto p-3 font-mono text-[13px] leading-relaxed select-text">
             {sourceLines.map((lineText, idx) => {
               const lineNum = idx + 1;
               const lineExprs = lineExprsMap.get(lineNum) || [];
-              const lineDiffs = lineVarsDiffMap.get(lineNum);
+              const lineDiffs = (selectedStep?.line === lineNum ? selectedStep : latestEventByLine.get(lineNum))?.vars_diff ?? lineVarsDiffMap.get(lineNum);
               const hasExprs = lineExprs.length > 0;
               const isReturnStep = lineNum === returnLine;
+              const isSelectedStep = lineNum === selectedStep?.line;
 
               return (
                 <div
@@ -372,7 +416,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                   ref={(el) => {
                     lineRefs.current[lineNum] = el;
                   }}
-                  className={`group flex flex-col rounded px-2 py-1 transition-colors ${
+                  className={`group flex flex-col rounded px-2 py-1 transition-colors ${isSelectedStep ? 'expression-active-line' : ''} ${
                     hasExprs || lineDiffs || isReturnStep
                       ? 'bg-slate-50/70 dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-900/70'
                       : 'hover:bg-slate-50 dark:hover:bg-slate-900/20 opacity-75'
@@ -390,42 +434,46 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                   {/* Alex Hall Birdseye-style Branch Decision Pill on if/elif lines */}
                   {(() => {
                     const isConditionLine = /^\s*(if|elif)\s+/.test(lineText);
-                    if (!isConditionLine || lineExprs.length === 0) return null;
-                    const trueExpr = lineExprs.find(e => e.val === 'True' || e.val === 'true' || (e.is_bool && e.bool_val === true) || e.truthy === true);
-                    const falseExpr = lineExprs.find(e => e.val === 'False' || e.val === 'false' || (e.is_bool && e.bool_val === false) || e.truthy === false);
-                    if (trueExpr) {
-                      return (
-                        <div className="ml-8 mt-1 flex items-center">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                            ✔ Branch Taken (True)
-                          </span>
-                        </div>
-                      );
-                    }
-                    if (falseExpr) {
-                      return (
-                        <div className="ml-8 mt-1 flex items-center">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30">
-                            ✖ Branch Skipped (False)
-                          </span>
-                        </div>
-                      );
-                    }
-                    return null;
+                    const branchEvent = selectedStep?.line === lineNum ? selectedStep : latestEventByLine.get(lineNum);
+                    const branchExprs = branchEvent?.expressions ?? lineExprs;
+                    const trueExpr = branchExprs.find(e => e.val === 'True' || e.val === 'true' || (e.is_bool && e.bool_val === true) || e.truthy === true);
+                    const falseExpr = branchExprs.find(e => e.val === 'False' || e.val === 'false' || (e.is_bool && e.bool_val === false) || e.truthy === false);
+                    if (!isConditionLine || (!trueExpr && !falseExpr)) return null;
+                    const taken = Boolean(trueExpr);
+                    const branchExpr = taken ? trueExpr : falseExpr;
+                    return (
+                      <div className="ml-8 mt-1 flex items-center">
+                        <button type="button" onClick={() => branchEvent && focusTraceEvent(branchEvent)}
+                          onMouseEnter={() => { setHoveredBranchEvent(branchEvent ?? null); setHoveredExpr(null); setHoveredLocalName(null); }}
+                          onMouseLeave={() => setHoveredBranchEvent(null)}
+                          onFocus={() => { setHoveredBranchEvent(branchEvent ?? null); setHoveredExpr(null); setHoveredLocalName(null); }}
+                          onBlur={() => setHoveredBranchEvent(null)}
+                          aria-label={`Line ${lineNum}: branch ${taken ? 'taken' : 'skipped'} (${branchExpr?.val}); inspect evaluation`}
+                          title="Inspect this decision; click to select its execution step"
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold border focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 ${taken ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30' : 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30'}`}>
+                          {taken ? '✓ Branch taken' : '× Branch skipped'} · {branchExpr?.val} · step {branchEvent?.seq ?? '—'}
+                        </button>
+                      </div>
+                    );
                   })()}
 
                   {/* Variable Mutations on this line */}
                   {lineDiffs && Object.keys(lineDiffs).length > 0 && (
                     <div className="ml-8 mt-1 flex flex-wrap items-center gap-1.5 select-none pt-0.5">
                       {Object.entries(lineDiffs).map(([vName, diff]) => (
-                        <span
+                        <button type="button"
                           key={vName}
+                          onMouseEnter={() => { setHoveredLocalName(vName); setHoveredExpr(null); setHoveredBranchEvent(null); }}
+                          onMouseLeave={() => setHoveredLocalName(null)}
+                          onFocus={() => { setHoveredLocalName(vName); setHoveredExpr(null); setHoveredBranchEvent(null); }}
+                          onBlur={() => setHoveredLocalName(null)}
+                          aria-label={`${vName} changed from ${diff.old} to ${diff.new}; inspect variable`}
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 shadow-xs"
                         >
                           <span className="font-semibold">{vName}</span>
                           <span>:=</span>
                           <span className="font-bold truncate max-w-[160px]">{diff.new}</span>
-                        </span>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -461,6 +509,8 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                               }}
                               onMouseEnter={() => setHoveredExpr(expr)}
                               onMouseLeave={() => setHoveredExpr(null)}
+                              onFocus={() => { setHoveredExpr(expr); setHoveredLocalName(null); setHoveredBranchEvent(null); }}
+                              onBlur={() => setHoveredExpr(null)}
                               className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border transition-all cursor-pointer ${badgeCls}`}
                               title={`Click to pin or inspect: ${expr.text}`}
                             >
@@ -476,39 +526,6 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                               )}
                             </button>
 
-                            {/* Floating Rich Tooltip on Hover */}
-                            {isHovered && (
-                              <div className="absolute bottom-full left-0 mb-2 z-50 min-w-[260px] max-w-sm p-3 rounded-xl bg-slate-900/95 dark:bg-[#0c1322]/95 backdrop-blur-md text-white border border-slate-700/80 shadow-2xl text-xs font-mono select-text pointer-events-auto">
-                                <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-slate-800">
-                                  <span className="font-bold text-indigo-400 truncate max-w-[170px]">{expr.text}</span>
-                                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300">{expr.type_name || 'expr'}</span>
-                                </div>
-                                <div className="mb-2 text-slate-200">
-                                  <span className="text-slate-400 text-[10px] uppercase font-semibold mr-1">Evaluated:</span>
-                                  <span className={`font-bold ${isTrue ? 'text-emerald-400' : isFalse ? 'text-rose-400' : 'text-emerald-300'}`}>
-                                    {isTrue ? '✔ True' : isFalse ? '✖ False' : expr.val}
-                                  </span>
-                                </div>
-                                {expr.length !== undefined && (
-                                  <div className="mb-1.5 text-[11px] text-slate-300">
-                                    Length: <strong className="text-white">{expr.length} items</strong>
-                                  </div>
-                                )}
-                                {expr.items_preview && (
-                                  <div className="mb-2 text-[10px] bg-slate-950 p-2 rounded-lg border border-slate-800 text-slate-300 overflow-x-auto max-h-24">
-                                    {Array.isArray(expr.items_preview) ? (
-                                      <div>[{expr.items_preview.join(', ')}]</div>
-                                    ) : (
-                                      <div>{JSON.stringify(expr.items_preview, null, 2)}</div>
-                                    )}
-                                  </div>
-                                )}
-                                <div className="flex items-center justify-between pt-1.5 border-t border-slate-800 text-[10px]">
-                                  <span className="text-slate-400">AST: {expr.node_type || 'expression'}</span>
-                                  <span className="text-indigo-400">Click to pin to watchlist</span>
-                                </div>
-                              </div>
-                            )}
                           </div>
                         );
                       })}
@@ -531,7 +548,29 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
 
           {/* Sticky Bottom Live Value Inspection Bar (Real Birdseye Inspector) */}
           <div className="mx-4 my-2.5 px-4 py-2 rounded-2xl glass-panel shadow-md border border-slate-200/80 dark:border-white/[0.08] flex items-center justify-between gap-3 text-xs font-mono shrink-0 select-none">
-            {hoveredExpr || selectedExprText ? (
+            {hoveredBranchEvent ? (
+              <div className="w-full min-w-0 flex flex-wrap items-center gap-2" role="status" aria-live="polite">
+                <strong className="text-indigo-500 shrink-0">Decision · line {hoveredBranchEvent.line}</strong>
+                <span className="truncate text-slate-700 dark:text-slate-200">{sourceLines[hoveredBranchEvent.line - 1]?.trim()}</span>
+                <span className="rounded-full px-2 py-1 bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 shrink-0">event #{hoveredBranchEvent.seq} · {hoveredBranchEvent.func}</span>
+                {(hoveredBranchEvent.expressions ?? []).map((expr, index) => (
+                  <span key={`${expr.text}-${index}`} className="rounded-lg px-2 py-1 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 truncate max-w-[240px]">
+                    {expr.text} → {expr.val}
+                  </span>
+                ))}
+                {!(hoveredBranchEvent.expressions ?? []).length && <span className="text-amber-600 dark:text-amber-300">Condition outcome wasn’t captured for this event.</span>}
+                <span className="ml-auto text-slate-400">Click the decision to select its step</span>
+              </div>
+            ) : hoveredLocalName ? (
+              <div className="w-full min-w-0 flex flex-wrap items-center gap-2" role="status" aria-live="polite">
+                <strong className="text-emerald-600 dark:text-emerald-400 shrink-0">Variable · {hoveredLocalName}</strong>
+                <code className="rounded-lg px-2 py-1 bg-white/80 dark:bg-slate-950/70 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-100 break-all">{currentLocals[hoveredLocalName] ?? inspectedDiffs[hoveredLocalName]?.new ?? 'Not present in this snapshot'}</code>
+                {inspectedDiffs[hoveredLocalName] && <span className="text-slate-500 dark:text-slate-400">{inspectedDiffs[hoveredLocalName].old} → {inspectedDiffs[hoveredLocalName].new}</span>}
+                <span className="rounded-full px-2 py-1 bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400">{inspectedEvent ? `event #${inspectedEvent.seq} · line ${inspectedEvent.line} · ${inspectedEvent.func}` : 'arguments'}</span>
+                <span className="text-slate-400">Runtime type is not included in the captured variable snapshot.</span>
+                <button type="button" onClick={() => setActiveTab('locals')} className="ml-auto rounded-lg px-2 py-1 border border-slate-200 dark:border-white/10 hover:text-indigo-500">Open locals</button>
+              </div>
+            ) : hoveredExpr || selectedExprText ? (
               (() => {
                 const activeExpr = hoveredExpr || evaluatedExpressionsList.find((e) => e.text === selectedExprText);
                 if (!activeExpr) {
@@ -578,9 +617,9 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                 );
               })()
             ) : (
-              <div className="flex items-center gap-2 text-slate-400 text-[11px]">
+              <div className="flex items-center gap-2 text-slate-400 text-[11px]" role="status" aria-live="polite">
                 <span className="w-2 h-2 rounded-full bg-slate-400" />
-                <span>Hover or click any expression to inspect full value representation and type details</span>
+                <span>Hover or focus an expression, variable, or branch decision to inspect its captured value and execution step.</span>
               </div>
             )}
           </div>
@@ -654,12 +693,17 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                     return (
                       <div
                         key={`step-${stepIdx}-${ev.seq}`}
-                        onClick={() => {
-                          if (lineRefs.current[ev.line]) {
-                            lineRefs.current[ev.line]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        role="button"
+                        tabIndex={0}
+                        aria-pressed={selectedEventSeq === ev.seq}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            focusEvent(stepIdx);
                           }
                         }}
-                        className="p-2.5 rounded-md border border-slate-200 dark:border-white/[0.08] bg-slate-50/80 dark:bg-slate-900/40 hover:border-indigo-400 dark:hover:border-indigo-600 transition-all cursor-pointer group"
+                        onClick={() => focusEvent(stepIdx)}
+                        className={`expression-event-card p-2.5 rounded-md border border-slate-200 dark:border-white/[0.08] bg-slate-50/80 dark:bg-slate-900/40 hover:border-indigo-400 dark:hover:border-indigo-600 transition-all cursor-pointer group ${selectedEventSeq === ev.seq ? 'is-active' : ''}`}
                       >
                         <div className="flex items-center justify-between mb-1">
                           <div className="flex items-center gap-1.5">
@@ -813,20 +857,23 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
 
             {activeTab === 'locals' && (
               <div className="space-y-1.5">
-                {Object.keys(activeCall?.args || {}).length === 0 ? (
+                {Object.keys(currentLocals).length === 0 ? (
                   <div className="p-8 text-center text-slate-400 text-xs">
                     No variables available.
                   </div>
                 ) : (
-                  Object.entries(activeCall?.args || {}).map(([k, v]) => (
+                  Object.entries(currentLocals).map(([k, v]) => (
                     <div
                       key={k}
+                      onMouseEnter={() => { setHoveredLocalName(k); setHoveredExpr(null); setHoveredBranchEvent(null); }}
+                      onMouseLeave={() => setHoveredLocalName(null)}
                       className="p-2 rounded bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/[0.08] flex items-center justify-between"
                     >
-                      <span className="font-semibold text-slate-700 dark:text-slate-300">{k}</span>
+                      <button type="button" onFocus={() => { setHoveredLocalName(k); setHoveredExpr(null); setHoveredBranchEvent(null); }} onBlur={() => setHoveredLocalName(null)} onClick={() => setHoveredLocalName(k)} className="font-semibold text-slate-700 dark:text-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 rounded">{k}</button>
                       <span className="text-emerald-600 dark:text-emerald-400 truncate max-w-[160px] font-medium">
                         {v}
                       </span>
+                      {inspectedDiffs[k] && <span className="text-[10px] text-amber-600 dark:text-amber-300">changed</span>}
                     </div>
                   ))
                 )}

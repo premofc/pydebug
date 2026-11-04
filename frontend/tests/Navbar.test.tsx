@@ -29,10 +29,10 @@ describe('Navbar Component', () => {
     },
   };
 
-  it('renders branding title and online indicator', () => {
+  it('renders branding title and connection state', () => {
     render(<Navbar {...defaultProps} />);
     expect(screen.getByText('PyDebug')).toBeInTheDocument();
-    expect(screen.getByText('6000 Online')).toBeInTheDocument();
+    expect(screen.getByText('Connected')).toBeInTheDocument();
   });
 
   it('renders active filename and function breadcrumbs', () => {
@@ -45,7 +45,7 @@ describe('Navbar Component', () => {
     const onOpenAiSettings = vi.fn();
     render(<Navbar {...defaultProps} onOpenAiSettings={onOpenAiSettings} />);
 
-    const aiButton = screen.getByTitle(/Configure AI Engine/i);
+    const aiButton = screen.getByTitle(/AI engine/i);
     fireEvent.click(aiButton);
     expect(onOpenAiSettings).toHaveBeenCalled();
   });
@@ -54,7 +54,7 @@ describe('Navbar Component', () => {
     const onToggleTheme = vi.fn();
     render(<Navbar {...defaultProps} theme="dark" onToggleTheme={onToggleTheme} />);
 
-    const themeBtn = screen.getByLabelText(/toggle theme/i);
+    const themeBtn = screen.getByLabelText('Switch to light theme');
     fireEvent.click(themeBtn);
     expect(onToggleTheme).toHaveBeenCalled();
   });

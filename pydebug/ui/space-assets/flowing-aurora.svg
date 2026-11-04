@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 1000" fill="none">
+  <defs>
+    <linearGradient id="current" x1="188" y1="808" x2="1610" y2="134" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2CD4C5" stop-opacity="0" />
+      <stop offset=".28" stop-color="#2CD4C5" stop-opacity=".34" />
+      <stop offset=".62" stop-color="#53BCEB" stop-opacity=".28" />
+      <stop offset="1" stop-color="#8796FF" stop-opacity="0" />
+    </linearGradient>
+    <linearGradient id="undertow" x1="140" y1="280" x2="1654" y2="924" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5B9FFF" stop-opacity="0" />
+      <stop offset=".5" stop-color="#5B9FFF" stop-opacity=".16" />
+      <stop offset="1" stop-color="#4CE0D0" stop-opacity="0" />
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-80%" width="140%" height="260%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="24" />
+    </filter>
+  </defs>
+  <path d="M-90 790C235 596 359 956 689 751s391-47 610-214S1549 233 1900 98" stroke="url(#current)" stroke-width="132" filter="url(#soft)" />
+  <path d="M-82 790C238 604 365 944 687 754s394-55 612-211S1550 244 1884 104" stroke="url(#current)" stroke-width="2" stroke-opacity=".52" />
+  <path d="M-60 154c278 108 338-37 618 142s422 281 638 257 393-208 704-57" stroke="url(#undertow)" stroke-width="86" filter="url(#soft)" />
+  <path d="M-60 154c278 108 338-37 618 142s422 281 638 257 393-208 704-57" stroke="url(#undertow)" stroke-width="1.5" stroke-opacity=".4" />
+</svg>

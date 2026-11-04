@@ -109,6 +109,17 @@ describe('BirdseyePage Component', () => {
     expect(screen.getAllByText('solve()')).toHaveLength(1);
   });
 
+  it('searches call argument names and values as well as function names', () => {
+    render(<BirdseyePage session={mockSession} />);
+    const searchInput = screen.getByPlaceholderText(/search functions/i);
+
+    fireEvent.change(searchInput, { target: { value: '5' } });
+    expect(screen.getAllByText('x=5, y=3')).toHaveLength(2);
+
+    fireEvent.change(searchInput, { target: { value: 'missing argument' } });
+    expect(screen.getAllByText('x=5, y=3')).toHaveLength(1);
+  });
+
   it('switches tabs to local variables and pinned items', () => {
     render(<BirdseyePage session={mockSession} />);
 
@@ -117,5 +128,40 @@ describe('BirdseyePage Component', () => {
     fireEvent.click(localsTab);
     expect(screen.getByText('x')).toBeInTheDocument();
     expect(screen.getByText('y')).toBeInTheDocument();
+  });
+
+  it('steps through captured events and highlights the matching source line', () => {
+    render(<BirdseyePage session={mockSession} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /next execution step/i }));
+    expect(screen.getByText('Step 1 of 3')).toBeInTheDocument();
+
+    const lineTwoStep = screen.getByText('Line 2', { exact: true }).closest('[role="button"]');
+    expect(lineTwoStep).not.toBeNull();
+    fireEvent.click(lineTwoStep!);
+    expect(screen.getByText('Step 2 of 3')).toBeInTheDocument();
+    expect(document.querySelector('.expression-active-line')).toBeInTheDocument();
+  });
+
+  it('shows the captured condition evaluation on branch focus and selects that step on click', () => {
+    render(<BirdseyePage session={mockSession} />);
+
+    const branch = screen.getByRole('button', { name: /line 2: branch taken/i });
+    fireEvent.focus(branch);
+    expect(screen.getByText(/Decision · line 2/)).toBeInTheDocument();
+    expect(screen.getByText(/x > 2 → True/)).toBeInTheDocument();
+
+    fireEvent.click(branch);
+    expect(screen.getByText('Step 2 of 3')).toBeInTheDocument();
+  });
+
+  it('shows a variable value and snapshot provenance on keyboard focus', () => {
+    render(<BirdseyePage session={mockSession} />);
+    fireEvent.click(screen.getByRole('button', { name: /locals/i }));
+
+    fireEvent.focus(screen.getByRole('button', { name: 'x' }));
+    expect(screen.getByText(/Variable · x/)).toBeInTheDocument();
+    expect(screen.getAllByText('5').length).toBeGreaterThan(0);
+    expect(screen.getByText(/Runtime type is not included/)).toBeInTheDocument();
   });
 });

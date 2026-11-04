@@ -25,6 +25,9 @@ htmlcov/
 frontend/node_modules/
 frontend/dist/
 .npm/
+.npm-cache/
+.impeccable-cache/
+.pytest-tmp*/
 
 # Scratch & temporary logs
 *.log

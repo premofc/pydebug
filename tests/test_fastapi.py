@@ -83,11 +83,13 @@ class TestPyDebugMiddleware:
             "headers": [],
         }
 
-        with patch.object(middleware, "_forward_to_studio") as mock_forward:
+        with patch("pydebug.integrations.fastapi.LiveSessionPublisher") as mock_publisher:
             asyncio.run(middleware(scope, None, mock_send))
             assert len(messages_sent) == 2
             assert messages_sent[0]["status"] == 201
-            assert mock_forward.called
+            mock_publisher.assert_called_once()
+            mock_publisher.return_value.start.assert_called_once()
+            mock_publisher.return_value.stop.assert_called_once()
 
     def test_forward_to_studio_silent_on_connection_error(self):
         middleware = PyDebugMiddleware(None, server_port=99999)

@@ -1585,7 +1585,7 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
       </div>
 
       {/* 2. FLOATING VCR TIMELINE CONTROLLER (Floats at bottom-16, directly ABOVE the bottom dock at bottom-3.5) */}
-      <div className="fixed bottom-16 left-1/2 -translate-x-1/2 w-auto max-w-3xl px-4 py-1.5 rounded-full glass-dock-bottom shadow-2xl flex items-center justify-between gap-4 select-none z-40 border border-slate-200/90 dark:border-white/[0.12] backdrop-blur-xl">
+      <div className="timeline-controller fixed bottom-16 left-1/2 -translate-x-1/2 w-[min(900px,calc(100vw-24px))] max-w-none px-4 py-1.5 rounded-full glass-dock-bottom shadow-2xl flex items-center justify-between gap-4 select-none z-40 border border-slate-200/90 dark:border-white/[0.12] backdrop-blur-xl" aria-label="Timeline playback controls">
         {/* Play & Step Buttons */}
         <div className="flex items-center gap-1.5 shrink-0">
           <button
@@ -1667,6 +1667,7 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
         {/* Center: Timeline Scrubber Bar */}
         <div className="flex-1 max-w-2xl flex items-center gap-3">
           <input
+            aria-label="Execution event position"
             type="range"
             min={0}
             max={Math.max(0, events.length - 1)}

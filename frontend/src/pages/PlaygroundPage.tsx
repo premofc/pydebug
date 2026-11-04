@@ -1,30 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import {
-  Play,
-  FlaskConical,
-  Code2,
-  CheckCircle2,
-  Copy,
-  Check,
-  ArrowRight,
-  Bug,
-  ShieldAlert,
-  ChevronDown,
-  ChevronRight,
-  Search,
-  Activity,
-  Clock,
-  Terminal,
-  RotateCcw,
-  FileCode,
-  Sliders,
-  WrapText,
-  X,
-  PlayCircle,
-  FileCode2,
-  GitFork,
-} from 'lucide-react';
-import type { TraceSession, FunctionSignature, LogEntry, FunctionInspectionResponse } from '../types';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import type { TraceSession, FunctionSignature, FunctionInspectionResponse } from '../types';
 
 interface PlaygroundPageProps {
   session: TraceSession;
@@ -43,183 +18,174 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
 }) => {
   const [functions, setFunctions] = useState<FunctionSignature[]>([]);
   const [selectedFunc, setSelectedFunc] = useState<FunctionSignature | null>(initialFunction || null);
-  const activeFuncRef = useRef<FunctionSignature | null>(initialFunction || null);
-
-  // Quick Function Switcher Modal State
-  const [showFuncModal, setShowFuncModal] = useState<boolean>(false);
-  const [modalSearchQuery, setModalSearchQuery] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showFunctionPicker, setShowFunctionPicker] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState('');
+  const [callArgsStr, setCallArgsStr] = useState('');
+  const [activeTab, setActiveTab] = useState<'exec' | 'refs'>('exec');
+  const [refSubTab, setRefSubTab] = useState<'references' | 'implementation'>('references');
+  const [outputTab, setOutputTab] = useState<'result' | 'logs'>('result');
+  const [logSearchQuery, setLogSearchQuery] = useState('');
+  const [isLoadingFunctions, setIsLoadingFunctions] = useState(true);
+  const [functionsError, setFunctionsError] = useState<string | null>(null);
 
   // Interactive parameter values state: name -> raw input string
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
-  // Raw Python call expression arguments string (e.g. "value=5" or "5")
-  const [callArgsStr, setCallArgsStr] = useState<string>('');
-
-  // Return Value Wrap State & Docstring Toggle
-  const [wrapReturnValue, setWrapReturnValue] = useState<boolean>(true);
-  const [showDocstring, setShowDocstring] = useState<boolean>(true);
-
   const [isRunning, setIsRunning] = useState<boolean>(false);
-  const [showTraceback, setShowTraceback] = useState<boolean>(false);
   const [lastResult, setLastResult] = useState<{
     success: boolean;
     return_val: string;
     events_count: number;
-    logs: LogEntry[];
     error: string | null;
     error_type?: string;
     error_message?: string;
     error_traceback?: string;
-    error_file?: string;
     error_line?: number;
     duration_ms?: number;
+    logs: NonNullable<TraceSession['logs']>;
   } | null>(null);
 
-  const [outputTab, setOutputTab] = useState<'result' | 'logs' | 'references'>('result');
+  // References and inspection data
   const [inspectionData, setInspectionData] = useState<FunctionInspectionResponse | null>(null);
-  const [isLoadingInspection, setIsLoadingInspection] = useState<boolean>(false);
+  const [isLoadingInspection, setIsLoadingInspection] = useState(false);
+  const [inspectionError, setInspectionError] = useState<string | null>(null);
   const [refSearchQuery, setRefSearchQuery] = useState<string>('');
-  const [refSubTab, setRefSubTab] = useState<'references' | 'implementation'>('references');
-  const [copiedCode, setCopiedCode] = useState<boolean>(false);
-  const [copiedRefLine, setCopiedRefLine] = useState<number | null>(null);
-  const [logSearchQuery, setLogSearchQuery] = useState<string>('');
-  const [logLevelFilter, setLogLevelFilter] = useState<'ALL' | 'INFO' | 'WARN' | 'ERROR' | 'STDOUT'>('ALL');
-  const [copiedLogs, setCopiedLogs] = useState<boolean>(false);
-  const [copied, setCopied] = useState<boolean>(false);
+  const [copiedResult, setCopiedResult] = useState<boolean>(false);
+  const [clipboardError, setClipboardError] = useState<string | null>(null);
+  const functionPickerTriggerRef = useRef<HTMLButtonElement>(null);
 
-  // Helper to build call arguments string from paramValues
-  const buildCallString = (params: FunctionSignature['params'], values: Record<string, string>): string => {
-    const parts: string[] = [];
-    params.forEach((p) => {
-      if (p.name === 'self' || p.name === 'cls') return;
-      const val = values[p.name];
-      if (val !== undefined && val.trim() !== '') {
-        parts.push(`${p.name}=${val}`);
-      }
-    });
-    return parts.join(', ');
-  };
+  // Resizer state for left pane
+  const [leftPaneWidth, setLeftPaneWidth] = useState<number>(260);
+  const isResizingRef = useRef<boolean>(false);
+  const startXRef = useRef<number>(0);
+  const startWidthRef = useRef<number>(260);
+  const stopResizeRef = useRef<(() => void) | null>(null);
 
-  // Helper to initialize parameters for a function
-  const initParamsForFunc = (fn: FunctionSignature) => {
+  // Initialize parameters when function selected
+  const buildCallString = useCallback((params: FunctionSignature['params'], values: Record<string, string>) =>
+    params
+      .filter((param) => param.name !== 'self' && param.name !== 'cls')
+      .flatMap((param) => {
+        const value = values[param.name]?.trim();
+        return value ? [`${param.name}=${value}`] : [];
+      })
+      .join(', '), []);
+
+  const initParamsForFunc = useCallback((fn: FunctionSignature) => {
     const initialParams: Record<string, string> = {};
     fn.params.forEach((p) => {
       if (p.name === 'self' || p.name === 'cls') return;
-      if (p.default !== null && p.default !== undefined) {
+      if (p.default !== undefined && p.default !== null) {
         initialParams[p.name] = String(p.default);
-      } else if (fn.sample_valid && fn.sample_valid[p.name] !== undefined) {
-        initialParams[p.name] = typeof fn.sample_valid[p.name] === 'string'
-          ? `'${fn.sample_valid[p.name]}'`
-          : JSON.stringify(fn.sample_valid[p.name]);
       } else {
-        const ann = (p.annotation || '').toLowerCase();
-        if (ann.includes('int')) initialParams[p.name] = '1';
-        else if (ann.includes('float')) initialParams[p.name] = '1.0';
-        else if (ann.includes('bool')) initialParams[p.name] = 'True';
-        else if (ann.includes('list')) initialParams[p.name] = '[]';
-        else if (ann.includes('dict')) initialParams[p.name] = '{}';
+        if (fn.sample_valid?.[p.name] !== undefined) {
+          const sample = fn.sample_valid[p.name];
+          initialParams[p.name] = JSON.stringify(sample);
+        } else if (p.annotation?.toLowerCase().includes('int')) initialParams[p.name] = '5';
+        else if (p.annotation?.toLowerCase().includes('float')) initialParams[p.name] = '1.0';
+        else if (p.annotation?.toLowerCase().includes('str')) initialParams[p.name] = '"active"';
+        else if (p.annotation?.toLowerCase().includes('bool')) initialParams[p.name] = 'True';
         else initialParams[p.name] = '';
       }
     });
     setParamValues(initialParams);
     setCallArgsStr(buildCallString(fn.params, initialParams));
-  };
+  }, [buildCallString]);
 
   // Fetch discoverable project functions from backend
   useEffect(() => {
+    let isMounted = true;
     const fetchFuncs = async () => {
+      setIsLoadingFunctions(true);
+      setFunctionsError(null);
       try {
         const res = await fetch('/api/functions');
-        if (res.ok) {
-          const data: FunctionSignature[] = await res.json();
+        if (!res.ok) throw new Error(`Unable to load workspace functions (${res.status}).`);
+        const response: unknown = await res.json();
+        if (!Array.isArray(response)) throw new Error('The function list response was invalid.');
+        const data = (response as unknown[]).filter((item): item is FunctionSignature =>
+          !!item && typeof item === 'object' &&
+          typeof (item as FunctionSignature).name === 'string' &&
+          typeof (item as FunctionSignature).file_path === 'string' &&
+          Array.isArray((item as FunctionSignature).params) &&
+          (item as FunctionSignature).params.every((param) =>
+            !!param && typeof param.name === 'string' &&
+            (param.annotation == null || typeof param.annotation === 'string')
+          )
+        );
+        if (isMounted) {
           if (data && data.length > 0) {
             setFunctions(data);
-            const target = activeFuncRef.current || initialFunction;
-            const matched = target
-              ? data.find((f) => f.name === target.name && f.file_path === target.file_path) || data[0]
+            const matched = initialFunction
+              ? data.find((f) => f.name === initialFunction.name && f.file_path === initialFunction.file_path) || data[0]
               : data[0];
             if (matched) {
-              activeFuncRef.current = matched;
               setSelectedFunc(matched);
               initParamsForFunc(matched);
             }
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching functions:', err);
-      }
-    };
-    fetchFuncs();
-  }, []);
-
-  // When initialFunction arrives from Dashboard "Try It Live"
-  useEffect(() => {
-    if (!initialFunction) return;
-    activeFuncRef.current = initialFunction;
-    const matched = functions.find(
-      (f) => f.name === initialFunction.name && f.file_path === initialFunction.file_path
-    );
-    const target = matched || initialFunction;
-    setSelectedFunc(target);
-    initParamsForFunc(target);
-    onConsumeInitialFunction?.();
-  }, [initialFunction, functions]);
-
-  // Global Ctrl+K / Cmd+K listener to open function switcher
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setShowFuncModal((prev) => !prev);
-      } else if (e.key === 'Escape' && showFuncModal) {
-        setShowFuncModal(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showFuncModal]);
-
-  const filteredModalFunctions = useMemo(() => {
-    if (!modalSearchQuery.trim()) return functions;
-    const q = modalSearchQuery.toLowerCase().trim();
-    return functions.filter(
-      (fn) =>
-        fn.name.toLowerCase().includes(q) ||
-        fn.file_path.toLowerCase().includes(q) ||
-        fn.params.some((p) => p.name.toLowerCase().includes(q))
-    );
-  }, [functions, modalSearchQuery]);
-
-  // Fetch source code implementation and workspace callers whenever selected function changes
-  useEffect(() => {
-    if (!selectedFunc) {
-      setInspectionData(null);
-      return;
-    }
-
-    let isMounted = true;
-    setIsLoadingInspection(true);
-
-    const fetchInspection = async () => {
-      try {
-        const url = `/api/function-inspection?file_path=${encodeURIComponent(selectedFunc.file_path)}&func_name=${encodeURIComponent(selectedFunc.name)}`;
-        const res = await fetch(url);
-        if (res.ok) {
-          const data: FunctionInspectionResponse = await res.json();
-          if (isMounted) {
-            setInspectionData(data);
-            if (data.references && data.references.length > 0) {
-              setRefSubTab('references');
-            } else {
-              setRefSubTab('implementation');
+            if (initialFunction) onConsumeInitialFunction?.();
+          } else {
+            setFunctions([]);
+            if (initialFunction) {
+              setSelectedFunc(initialFunction);
+              initParamsForFunc(initialFunction);
+              onConsumeInitialFunction?.();
             }
           }
         }
       } catch (err) {
-        console.error('Failed to load function inspection:', err);
-      } finally {
         if (isMounted) {
-          setIsLoadingInspection(false);
+          setFunctionsError(err instanceof Error ? err.message : 'Unable to load workspace functions.');
+          if (initialFunction) {
+            setSelectedFunc(initialFunction);
+            initParamsForFunc(initialFunction);
+            onConsumeInitialFunction?.();
+          }
         }
+      } finally {
+        if (isMounted) setIsLoadingFunctions(false);
+      }
+    };
+    fetchFuncs();
+    return () => { isMounted = false; };
+  }, [initialFunction, initParamsForFunc, onConsumeInitialFunction]);
+
+  // Fetch source code implementation and workspace callers whenever selected function changes
+  useEffect(() => {
+    if (!selectedFunc) return;
+
+    let isMounted = true;
+    const fetchInspection = async () => {
+      setInspectionData(null);
+      setInspectionError(null);
+      setIsLoadingInspection(true);
+      try {
+        const url = `/api/function-inspection?file_path=${encodeURIComponent(selectedFunc.file_path)}&func_name=${encodeURIComponent(selectedFunc.name)}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Unable to inspect this function (${res.status}).`);
+        const response: unknown = await res.json();
+        if (!response || typeof response !== 'object') throw new Error('The function inspection response was invalid.');
+        const raw = response as Partial<FunctionInspectionResponse>;
+        const references = Array.isArray(raw.references) ? raw.references.filter((reference) =>
+          !!reference && typeof reference.file_path === 'string' &&
+          typeof reference.rel_path === 'string' && typeof reference.snippet === 'string' &&
+          typeof reference.caller_context === 'string' && Number.isFinite(reference.line)
+        ) : [];
+        const implementation = raw.implementation && typeof raw.implementation.code === 'string'
+          ? raw.implementation
+          : null;
+        if (isMounted) setInspectionData({
+          func_name: typeof raw.func_name === 'string' ? raw.func_name : selectedFunc.name,
+          file_path: typeof raw.file_path === 'string' ? raw.file_path : selectedFunc.file_path,
+          rel_path: typeof raw.rel_path === 'string' ? raw.rel_path : selectedFunc.file_path,
+          implementation,
+          references,
+          total_references: references.length,
+        });
+      } catch (err) {
+        if (isMounted) setInspectionError(err instanceof Error ? err.message : 'Unable to inspect this function.');
+      } finally {
+        if (isMounted) setIsLoadingInspection(false);
       }
     };
 
@@ -227,82 +193,61 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [selectedFunc?.file_path, selectedFunc?.name]);
+  }, [selectedFunc]);
 
-  const filteredReferences = useMemo(() => {
-    if (!inspectionData?.references) return [];
-    if (!refSearchQuery.trim()) return inspectionData.references;
-    const q = refSearchQuery.toLowerCase();
-    return inspectionData.references.filter(
-      (r) =>
-        r.rel_path.toLowerCase().includes(q) ||
-        r.caller_context.toLowerCase().includes(q) ||
-        r.snippet.toLowerCase().includes(q)
-    );
-  }, [inspectionData, refSearchQuery]);
+  useEffect(() => () => stopResizeRef.current?.(), []);
 
-  const handleSelectFunction = (func: FunctionSignature) => {
-    activeFuncRef.current = func;
-    setSelectedFunc(func);
-    initParamsForFunc(func);
-    setLastResult(null);
-    setShowFuncModal(false);
+  // Handle Resizer Mouse Events
+  const handleMouseDown = (e: React.MouseEvent) => {
+    isResizingRef.current = true;
+    startXRef.current = e.clientX;
+    startWidthRef.current = leftPaneWidth;
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (!isResizingRef.current) return;
+      const dx = moveEvent.clientX - startXRef.current;
+      const newWidth = Math.max(180, Math.min(500, startWidthRef.current + dx));
+      setLeftPaneWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      isResizingRef.current = false;
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('blur', onMouseUp);
+      stopResizeRef.current = null;
+    };
+    stopResizeRef.current = onMouseUp;
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('blur', onMouseUp);
   };
 
-  const handleParamChange = (paramName: string, val: string) => {
+  const handleDoubleClickResizer = () => {
+    setLeftPaneWidth(260);
+  };
+
+  const handleRunExecution = async () => {
     if (!selectedFunc) return;
-    const updated = { ...paramValues, [paramName]: val };
-    setParamValues(updated);
-    setCallArgsStr(buildCallString(selectedFunc.params, updated));
-  };
-
-  const handleCallArgsChange = (val: string) => {
-    setCallArgsStr(val);
-    if (selectedFunc && val.includes('=')) {
-      const updated = { ...paramValues };
-      const tokens = val.split(',');
-      tokens.forEach((tok) => {
-        const parts = tok.split('=');
-        if (parts.length === 2) {
-          const k = parts[0].trim();
-          const v = parts[1].trim();
-          if (updated[k] !== undefined) {
-            updated[k] = v;
-          }
-        }
-      });
-      setParamValues(updated);
-    }
-  };
-
-  const resetParamsToDefault = () => {
-    if (!selectedFunc) return;
-    initParamsForFunc(selectedFunc);
-  };
-
-  const runLiveExecution = async (overrideArgs?: Record<string, any>, targetFuncOverride?: FunctionSignature) => {
-    const fn = targetFuncOverride || selectedFunc;
-    if (!fn) return;
-
     setIsRunning(true);
     setLastResult(null);
-    setShowTraceback(false);
     const startTime = performance.now();
 
     try {
-      const payload: Record<string, any> = {
-        file_path: fn.file_path,
-        function_name: fn.name,
+      const payload: Record<string, unknown> = {
+        file_path: selectedFunc.file_path,
+        function_name: selectedFunc.name,
+        ...(callArgsStr.trim()
+          ? { call_expr: `${selectedFunc.name}(${callArgsStr})` }
+          : { args: {} }),
       };
-
-      if (overrideArgs) {
-        payload.args = overrideArgs;
-      } else {
-        payload.args = paramValues;
-        if (callArgsStr.trim()) {
-          payload.call_expr = `${fn.name}(${callArgsStr.trim()})`;
-        }
-      }
 
       const res = await fetch('/api/execute-function', {
         method: 'POST',
@@ -317,866 +262,517 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
         if (data.session) {
           onSessionUpdated(data.session);
         }
+        const logs = Array.isArray(data.session?.logs) ? data.session.logs : [];
         setLastResult({
-          success: data.success,
+          success: data.success === true,
           return_val: data.return_val || '',
           events_count: data.session?.events?.length || 0,
-          logs: data.session?.logs || [],
-          error: data.error,
+          error: data.error || null,
           error_type: data.error_type,
           error_message: data.error_message,
           error_traceback: data.error_traceback,
-          error_file: data.error_file,
           error_line: data.error_line,
           duration_ms: elapsed,
+          logs,
         });
       } else {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         setLastResult({
           success: false,
           return_val: '',
           events_count: 0,
-          logs: [],
           error: err.error || 'Server error during execution',
           error_type: err.error_type || 'ServerError',
           error_message: err.error_message || err.error,
           error_traceback: err.error_traceback,
+          error_line: err.error_line,
           duration_ms: elapsed,
+          logs: [],
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setLastResult({
         success: false,
         return_val: '',
         events_count: 0,
-        logs: [],
-        error: err.message,
+        error: err instanceof Error ? err.message : 'The execution request failed.',
         error_type: 'NetworkError',
-        duration_ms: 0.1,
+        duration_ms: Math.max(0.1, performance.now() - startTime),
+        logs: [],
       });
     } finally {
       setIsRunning(false);
     }
   };
 
-  const logs = lastResult?.logs || [];
-  const filteredLogs = useMemo(() => {
-    return logs.filter((l) => {
-      if (logLevelFilter === 'INFO' && l.level !== 'INFO') return false;
-      if (logLevelFilter === 'WARN' && l.level !== 'WARNING' && l.level !== 'WARN') return false;
-      if (logLevelFilter === 'ERROR' && l.level !== 'ERROR' && l.level !== 'CRITICAL') return false;
-      if (logLevelFilter === 'STDOUT' && l.level !== 'STDOUT' && l.level !== 'STDERR') return false;
-      if (!logSearchQuery.trim()) return true;
-      const q = logSearchQuery.toLowerCase();
-      return l.message.toLowerCase().includes(q) || l.logger.toLowerCase().includes(q);
-    });
-  }, [logs, logLevelFilter, logSearchQuery]);
-
-  const copyAllLogs = () => {
-    const text = filteredLogs
-      .map((l) => `[${l.level}] ${l.logger}: ${l.message}`)
-      .join('\n');
-    navigator.clipboard.writeText(text);
-    setCopiedLogs(true);
-    setTimeout(() => setCopiedLogs(false), 1500);
-  };
-
-  const copyResult = () => {
-    if (lastResult?.return_val) {
-      navigator.clipboard.writeText(lastResult.return_val);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+  const copyResult = async () => {
+    if (!lastResult) return;
+    const textToCopy = lastResult.return_val || lastResult.error || '';
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      setCopiedResult(true);
+      window.setTimeout(() => setCopiedResult(false), 1500);
+    } catch {
+      setClipboardError('Clipboard access is unavailable. Select and copy the result instead.');
     }
   };
 
-  const cleanParams = selectedFunc?.params.filter((p) => p.name !== 'self' && p.name !== 'cls') || [];
-  const isMethod = Boolean(selectedFunc?.name.includes('.'));
-  const methodName = isMethod ? selectedFunc!.name.split('.').pop() : selectedFunc?.name;
-  const clsName = isMethod ? selectedFunc!.name.split('.').slice(0, -1).join('.') : null;
-  const relativeFile = selectedFunc?.file_path.split(/[\\/]/).slice(-2).join('/') || selectedFunc?.file_path || '';
+  const filteredFunctions = useMemo(() => {
+    if (!searchQuery.trim()) return functions;
+    const q = searchQuery.toLowerCase().trim();
+    return functions.filter(
+      (fn) =>
+        fn.name.toLowerCase().includes(q) ||
+        fn.file_path.toLowerCase().includes(q)
+    );
+  }, [functions, searchQuery]);
+
+  const cleanParams = useMemo(() => {
+    if (!selectedFunc || !Array.isArray(selectedFunc.params)) return [];
+    return selectedFunc.params.filter((p) => p.name !== 'self' && p.name !== 'cls');
+  }, [selectedFunc]);
+
+  const filteredCallers = useMemo(() => {
+    if (!inspectionData?.references) return [];
+    if (!refSearchQuery.trim()) return inspectionData.references;
+    const q = refSearchQuery.toLowerCase();
+    return inspectionData.references.filter(
+      (r) => r.file_path.toLowerCase().includes(q) || r.snippet.toLowerCase().includes(q)
+    );
+  }, [inspectionData, refSearchQuery]);
+
+  const filteredPickerFunctions = useMemo(() => {
+    const query = pickerQuery.trim().toLowerCase();
+    if (!query) return functions;
+    return functions.filter((fn) => fn.name.toLowerCase().includes(query) || fn.file_path.toLowerCase().includes(query));
+  }, [functions, pickerQuery]);
+
+  const filteredLogs = useMemo(() => {
+    const query = logSearchQuery.trim().toLowerCase();
+    return (lastResult?.logs || []).filter((log) =>
+      !!log && typeof log.message === 'string' && typeof log.logger === 'string' &&
+      (!query || log.message.toLowerCase().includes(query) || log.logger.toLowerCase().includes(query))
+    );
+  }, [lastResult, logSearchQuery]);
+
+  const chooseFunction = (fn: FunctionSignature) => {
+    setSelectedFunc(fn);
+    initParamsForFunc(fn);
+    setLastResult(null);
+    setShowFunctionPicker(false);
+    setPickerQuery('');
+    window.setTimeout(() => functionPickerTriggerRef.current?.focus(), 0);
+  };
+
+  const closeFunctionPicker = () => {
+    setShowFunctionPicker(false);
+    window.setTimeout(() => functionPickerTriggerRef.current?.focus(), 0);
+  };
+
+  const handlePickerKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      closeFunctionPicker();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const controls = event.currentTarget.querySelectorAll<HTMLElement>('input, button:not([disabled])');
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  };
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors pb-20">
-      {/* 2-Column Power Studio Split */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Column 1: Spacious Function Invocation Studio (Left 55%) */}
-        <div className="flex-1 flex flex-col bg-white dark:bg-[#090e1a] overflow-hidden border-r border-slate-200 dark:border-white/[0.08]">
-          {/* Header Bar: Function Signature & Quick Switcher */}
-          <div className="p-4 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50/50 dark:bg-[#0b1220]/50">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-mono text-xs px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold border border-indigo-200/60 dark:border-indigo-800/60">
-                    def
-                  </span>
-                  {clsName && (
-                    <span className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-medium">
-                      {clsName}
-                    </span>
-                  )}
-                  <span className="font-mono text-base font-bold text-slate-900 dark:text-white truncate">
-                    {methodName || 'select_function'}()
-                  </span>
-                  {selectedFunc?.is_async && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 font-mono">
-                      async coroutine
-                    </span>
-                  )}
-                </div>
-
-                <div
-                  className="text-xs text-slate-400 font-mono mt-1.5 flex items-center gap-1.5 truncate"
-                  title={selectedFunc?.file_path}
-                >
-                  <FileCode className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                  <span className="truncate">{relativeFile}:{selectedFunc?.line}</span>
-                  <span className="text-slate-300 dark:text-slate-700">•</span>
-                  <span>{cleanParams.length} parameters</span>
-                </div>
-              </div>
-
-              {/* Action Buttons: Switch Function & Reset */}
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  onClick={() => setShowFuncModal(true)}
-                  className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.1] hover:border-indigo-500/50 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 shadow-xs transition-all cursor-pointer group"
-                  title="Switch Target Function (Ctrl+K)"
-                >
-                  <Search className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-500" />
-                  <span>Switch Function</span>
-                  <kbd className="hidden md:inline-block px-1.5 py-0.2 rounded text-[10px] font-mono bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700">
-                    ⌘K
-                  </kbd>
-                </button>
-
-                <button
-                  onClick={resetParamsToDefault}
-                  className="p-1.5 rounded-xl text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.08] hover:border-slate-300 transition-colors cursor-pointer"
-                  title="Reset arguments to defaults"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Docstring */}
-            {selectedFunc?.docstring && (
-              <div className="mt-3">
-                <div
-                  onClick={() => setShowDocstring(!showDocstring)}
-                  className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1 cursor-pointer select-none mb-1 hover:text-indigo-500 transition-colors"
-                >
-                  {showDocstring ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                  <span>Function Documentation</span>
-                </div>
-                {showDocstring && (
-                  <p className="text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-[#080d18] p-3 rounded-xl border border-slate-200/80 dark:border-white/[0.06] font-sans leading-relaxed whitespace-pre-line max-h-36 overflow-y-auto shadow-inner">
-                    {selectedFunc.docstring}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Invocation Studio Body */}
-          <div className="flex-1 flex flex-col p-5 pb-20 overflow-y-auto space-y-5">
-            {/* 1. Live Python Call Expression Bar */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
-                <span className="flex items-center gap-1.5">
-                  <Terminal className="w-3.5 h-3.5 text-indigo-500" />
-                  Python Invocation Expression
-                </span>
-                <span className="text-[11px] text-slate-400 font-mono">
-                  Real-time call syntax
-                </span>
-              </div>
-
-              <div className="p-3 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-900 text-slate-100 flex items-center gap-1.5 font-mono text-xs shadow-inner">
-                <span className="text-emerald-400 select-none font-bold">&gt;</span>
-                <span className="text-indigo-400 font-semibold">{selectedFunc?.name || 'function'}(</span>
-                <input
-                  type="text"
-                  value={callArgsStr}
-                  onChange={(e) => handleCallArgsChange(e.target.value)}
-                  placeholder={cleanParams.map((p) => `${p.name}=...`).join(', ') || 'no arguments'}
-                  className="flex-1 bg-transparent text-emerald-300 focus:outline-none placeholder-slate-500 text-xs font-mono"
-                />
-                <span className="text-indigo-400 font-semibold">)</span>
-              </div>
-            </div>
-
-            {/* 2. Structured Parameter Form */}
-            <div className="space-y-3 flex-1 flex flex-col">
-              <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
-                <span className="flex items-center gap-1.5">
-                  <Sliders className="w-3.5 h-3.5 text-indigo-500" />
-                  Parameters ({cleanParams.length})
-                </span>
-                <span className="text-[11px] text-slate-400">
-                  Accepts Python literals: numbers, strings, True/False, None, [lists], dicts
-                </span>
-              </div>
-
-              {cleanParams.length === 0 ? (
-                <div className="p-8 rounded-xl border border-dashed border-slate-200 dark:border-white/[0.1] text-center text-xs text-slate-400 flex flex-col items-center justify-center">
-                  <Code2 className="w-8 h-8 text-slate-300 dark:text-slate-700 mb-2 stroke-1" />
-                  <p className="font-medium text-slate-600 dark:text-slate-300">No Parameters Required</p>
-                  <p className="text-[11px] mt-1">This function can be executed directly without arguments.</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {cleanParams.map((p) => {
-                    const val = paramValues[p.name] ?? '';
-                    return (
-                      <div
-                        key={p.name}
-                        className="p-3.5 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50/70 dark:bg-[#070b14] space-y-1.5 shadow-xs"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-200">
-                              {p.name}
-                            </span>
-                            {p.annotation && (
-                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-mono border border-indigo-200/60 dark:border-indigo-800/60">
-                                {p.annotation}
-                              </span>
-                            )}
-                          </div>
-                          {p.default !== null && p.default !== undefined && (
-                            <span className="text-[10px] font-mono text-slate-400">
-                              default: <code className="text-slate-600 dark:text-slate-300">{p.default}</code>
-                            </span>
-                          )}
-                        </div>
-
-                        <input
-                          type="text"
-                          value={val}
-                          onChange={(e) => handleParamChange(p.name, e.target.value)}
-                          placeholder={`Enter ${p.name}...`}
-                          className="w-full px-3 py-2 text-xs font-mono rounded-lg bg-white dark:bg-[#050811] border border-slate-200 dark:border-white/[0.1] text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-colors shadow-inner"
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Run Button Footer */}
-            <div className="pt-3 border-t border-slate-200 dark:border-white/[0.08] flex items-center justify-between gap-3">
-              <div className="text-[11px] text-slate-400">
-                Executes inside PyTracer with AST sub-expression tracking & live logs.
-              </div>
-              <button
-                onClick={() => runLiveExecution()}
-                disabled={isRunning}
-                className={`px-6 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 shadow-md transition-all duration-150 cursor-pointer ${
-                  isRunning
-                    ? 'opacity-50 cursor-not-allowed bg-slate-300 dark:bg-slate-800 text-slate-500'
-                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/25 active:scale-95'
-                }`}
-              >
-                {isRunning ? (
-                  <>
-                    <Activity className="w-3.5 h-3.5 animate-spin" />
-                    <span>Tracing & Executing...</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    <span>Run Live Execution</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
+    <div className="sandbox-split-grid w-full h-full">
+      {/* Column 1: Left Pane (Callables List) */}
+      <div className="sandbox-left-pane" style={{ width: `${leftPaneWidth}px` }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+          <h2 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)', margin: 0 }}>
+            Callables ({functions.length})
+          </h2>
+          <button ref={functionPickerTriggerRef} type="button" className="vcr-btn" onClick={() => { setPickerQuery(''); setShowFunctionPicker(true); }}>
+            Switch Function
+          </button>
         </div>
 
-        {/* Column 2: Spacious Live Output & Logs Inspector (Right 45%) */}
-        <div className="w-[480px] lg:w-[560px] xl:w-[620px] flex flex-col bg-slate-50/50 dark:bg-[#050811] overflow-hidden shrink-0">
-          <div className="p-3 border-b border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#090e1a] flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200 dark:border-white/[0.08] text-xs font-semibold">
+        {functionsError && <p role="alert" className="sandbox-message error">{functionsError}</p>}
+        {isLoadingFunctions && <p role="status" className="sandbox-message">Loading workspace functions…</p>}
+
+        {/* Filter input */}
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Filter functions..."
+          style={{
+            padding: '4px 8px',
+            borderRadius: '5px',
+            border: '1px solid var(--border-subtle)',
+            background: 'var(--bg-surface)',
+            color: 'var(--text-primary)',
+            fontSize: '11px',
+            marginBottom: '4px',
+            width: '100%',
+          }}
+        />
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto' }}>
+          {!isLoadingFunctions && !functionsError && filteredFunctions.length === 0 && (
+            <p className="sandbox-message">
+              {functions.length ? 'No functions match this filter.' : 'No workspace functions were found.'}
+            </p>
+          )}
+          {filteredFunctions.map((fn) => {
+            const isSelected = selectedFunc?.name === fn.name && selectedFunc?.file_path === fn.file_path;
+            const shortFile = fn.file_path.split(/[\\/]/).pop() || fn.file_path;
+            return (
               <button
-                onClick={() => setOutputTab('result')}
-                className={`px-3 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
-                  outputTab === 'result'
-                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                }`}
+                type="button"
+                key={`${fn.file_path}-${fn.name}`}
+                className={`func-card gloss-card ${isSelected ? 'border-[var(--primary)] shadow-sm' : ''}`}
+                aria-pressed={isSelected}
+                style={{
+                  padding: '8px 10px',
+                  cursor: 'pointer',
+                  borderColor: isSelected ? 'var(--primary)' : undefined,
+                  background: isSelected ? 'var(--primary-subtle)' : undefined,
+                  textAlign: 'left',
+                }}
+                onClick={() => chooseFunction(fn)}
               >
-                <Activity className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Result</span>
-              </button>
-              <button
-                onClick={() => setOutputTab('logs')}
-                className={`px-3 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
-                  outputTab === 'logs'
-                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                }`}
-              >
-                <Terminal className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Logs ({logs.length})</span>
-                {logs.some((l) => l.level === 'ERROR' || l.level === 'CRITICAL') && (
-                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-                )}
-              </button>
-              <button
-                onClick={() => setOutputTab('references')}
-                className={`px-3 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
-                  outputTab === 'references'
-                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                }`}
-              >
-                <Code2 className="w-3.5 h-3.5 text-blue-500" />
-                <span>References & Code</span>
-                {inspectionData?.references && inspectionData.references.length > 0 && (
-                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-500/15 text-blue-600 dark:text-blue-400 font-mono font-bold">
-                    {inspectionData.references.length}
-                  </span>
-                )}
-              </button>
-            </div>
-
-            {lastResult?.duration_ms && (
-              <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1">
-                <Clock className="w-3 h-3 text-emerald-500" />
-                {lastResult.duration_ms.toFixed(1)} ms
-              </span>
-            )}
-          </div>
-
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {!lastResult && !isRunning && (
-              <div className="h-full flex flex-col items-center justify-center text-center p-8 text-slate-400">
-                <FlaskConical className="w-12 h-12 stroke-1 text-slate-300 dark:text-slate-700 mb-3" />
-                <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">Ready for Execution</p>
-                <p className="text-xs text-slate-400 max-w-[260px] mt-1.5">
-                  Click 'Run Live Execution' to trace return values, variable modifications, and exception lines.
-                </p>
-              </div>
-            )}
-
-            {isRunning && (
-              <div className="h-full flex flex-col items-center justify-center text-center p-8 text-indigo-500">
-                <Activity className="w-9 h-9 animate-spin mb-3" />
-                <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Executing with PyTracer...</p>
-                <p className="text-xs text-slate-400 mt-1">Recording AST events, sub-expressions, and live logs</p>
-              </div>
-            )}
-
-            {lastResult && outputTab === 'result' && (
-              <div className="flex-1 p-5 overflow-y-auto flex flex-col space-y-4">
-                {/* Result Status Card */}
-                {lastResult.success ? (
-                  <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-xs shrink-0">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 font-bold text-sm">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                        <span>Execution Succeeded (200 OK)</span>
-                      </div>
-                      <span className="text-[11px] font-mono text-emerald-600/80 dark:text-emerald-400/80">
-                        {lastResult.duration_ms?.toFixed(1)} ms
-                      </span>
-                    </div>
-
-                    <div className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80 mt-1.5 flex items-center gap-2">
-                      <span>{lastResult.events_count} events recorded</span>
-                      <span>•</span>
-                      <span>{lastResult.logs.length} logs captured</span>
-                    </div>
-
-                    {/* Quick Action Navigation Bar */}
-                    <div className="mt-3.5 pt-3 border-t border-emerald-500/20 flex items-center gap-2">
-                      <button
-                        onClick={onNavigateToHunter}
-                        className="flex-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
-                        title="Step through all recorded events and variables in Timeline Replay"
-                      >
-                        <PlayCircle className="w-3.5 h-3.5" />
-                        <span>View in Timeline Replay</span>
-                        <ArrowRight className="w-3 h-3 ml-0.5 opacity-80" />
-                      </button>
-                      <button
-                        onClick={() => setOutputTab('logs')}
-                        className="py-2 px-3 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 font-medium text-xs flex items-center gap-1.5 border border-emerald-500/30 transition-colors cursor-pointer"
-                        title="Inspect execution logs"
-                      >
-                        <Terminal className="w-3.5 h-3.5" />
-                        <span>View Logs ({lastResult.logs.length})</span>
-                      </button>
-                    </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11.5px', fontWeight: 700, color: isSelected ? 'var(--primary)' : 'var(--text-primary)' }}>
+                    {fn.name}
                   </div>
-                ) : (
-                  <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs shadow-xs shrink-0">
-                    <div className="flex items-center gap-2 font-bold text-rose-600 dark:text-rose-400 text-sm">
-                      <ShieldAlert className="w-4 h-4 text-rose-500" />
-                      <span>Exception Trapped: {lastResult.error_type || 'Error'}</span>
-                    </div>
-                    <p className="mt-2 font-mono text-xs bg-rose-500/10 p-2.5 rounded-lg border border-rose-500/20 text-rose-800 dark:text-rose-200 break-words">
-                      {lastResult.error_message || lastResult.error}
-                    </p>
-                    {lastResult.error_line && (
-                      <div className="mt-2 text-[11px] font-mono text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
-                        <Bug className="w-3.5 h-3.5" />
-                        <span>Failed at Line {lastResult.error_line}</span>
-                        {lastResult.error_file && (
-                          <span className="truncate text-slate-500">
-                            ({lastResult.error_file.split(/[\\/]/).pop()})
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="mt-3.5 flex items-center gap-2">
-                      <button
-                        onClick={onNavigateToHunter}
-                        className="flex-1 py-2.5 px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
-                      >
-                        <span>🎯 Inspect Failure Line in Timeline</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
-                      {lastResult.logs.length > 0 && (
-                        <button
-                          onClick={() => setOutputTab('logs')}
-                          className="py-2.5 px-3 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-700 dark:text-rose-300 font-medium text-xs flex items-center gap-1.5 border border-rose-500/30 transition-colors cursor-pointer"
-                        >
-                          <Terminal className="w-3.5 h-3.5" />
-                          <span>Logs ({lastResult.logs.length})</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Return Value Inspector - Full Height Flexible Container */}
-                {lastResult.return_val && (
-                  <div className="flex-1 flex flex-col min-h-[220px] space-y-2">
-                    <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      <span className="flex items-center gap-1.5">
-                        <Terminal className="w-3.5 h-3.5 text-emerald-500" />
-                        Return Value
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setWrapReturnValue(!wrapReturnValue)}
-                          className={`text-[11px] px-2 py-0.5 rounded border transition-colors cursor-pointer flex items-center gap-1 ${
-                            wrapReturnValue
-                              ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800'
-                              : 'text-slate-500 border-slate-200 dark:border-white/[0.08]'
-                          }`}
-                          title="Toggle word wrapping"
-                        >
-                          <WrapText className="w-3 h-3" />
-                          <span>{wrapReturnValue ? 'Wrapped' : 'No Wrap'}</span>
-                        </button>
-                        <button
-                          onClick={copyResult}
-                          className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
-                        >
-                          {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                          {copied ? 'Copied' : 'Copy'}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="flex-1 p-4 rounded-xl bg-slate-900 border border-slate-800 text-slate-100 font-mono text-xs overflow-auto shadow-inner select-text">
-                      <pre
-                        className={`${
-                          wrapReturnValue ? 'whitespace-pre-wrap break-all' : 'whitespace-pre overflow-x-auto'
-                        } leading-relaxed`}
-                      >
-                        {lastResult.return_val}
-                      </pre>
-                    </div>
-                  </div>
-                )}
-
-                {/* Traceback Dropdown */}
-                {lastResult.error_traceback && (
-                  <div className="space-y-1.5 shrink-0">
-                    <button
-                      onClick={() => setShowTraceback((prev) => !prev)}
-                      className="text-xs font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1 hover:underline cursor-pointer"
-                    >
-                      {showTraceback ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                      <span>{showTraceback ? 'Hide Full Traceback' : 'Show Full Python Traceback'}</span>
-                    </button>
-                    {showTraceback && (
-                      <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-rose-300 font-mono text-[11px] leading-relaxed overflow-x-auto max-h-60 select-text">
-                        <pre className="whitespace-pre-wrap">{lastResult.error_traceback}</pre>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Quick Logs Peek */}
-                {lastResult.logs.length > 0 && (
-                  <div className="p-3.5 rounded-xl bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200 dark:border-white/[0.08] flex items-center justify-between shrink-0">
-                    <div className="flex items-center gap-2 text-xs">
-                      <Terminal className="w-4 h-4 text-indigo-500" />
-                      <span className="font-semibold text-slate-700 dark:text-slate-300">
-                        {lastResult.logs.length} logs captured
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => setOutputTab('logs')}
-                      className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer flex items-center gap-1"
-                    >
-                      <span>View Logs</span>
-                      <ArrowRight className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Console Logs Tab */}
-            {lastResult && outputTab === 'logs' && (
-              <div className="flex-1 flex flex-col overflow-hidden">
-                <div className="p-3 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50/50 dark:bg-[#070b14] space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="relative flex-1">
-                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
-                      <input
-                        type="text"
-                        value={logSearchQuery}
-                        onChange={(e) => setLogSearchQuery(e.target.value)}
-                        placeholder="Search logs by message or logger..."
-                        className="w-full pl-8 pr-2.5 py-1.5 rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.1] text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-mono"
-                      />
-                    </div>
-                    {logs.length > 0 && (
-                      <button
-                        onClick={copyAllLogs}
-                        className="px-2 py-1.5 rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.1] text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white text-xs flex items-center gap-1 cursor-pointer shrink-0"
-                        title="Copy all logs"
-                      >
-                        {copiedLogs ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                        <span>{copiedLogs ? 'Copied' : 'Copy'}</span>
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-1 text-[11px] font-mono overflow-x-auto pb-0.5">
-                    {(['ALL', 'INFO', 'WARN', 'ERROR', 'STDOUT'] as const).map((lvl) => (
-                      <button
-                        key={lvl}
-                        onClick={() => setLogLevelFilter(lvl)}
-                        className={`px-2.5 py-0.5 rounded text-[10px] font-semibold border transition-all cursor-pointer ${
-                          logLevelFilter === lvl
-                            ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
-                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white/[0.1] hover:border-slate-300'
-                        }`}
-                      >
-                        {lvl}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-xs">
-                  {filteredLogs.length === 0 ? (
-                    <div className="h-48 flex flex-col items-center justify-center text-center p-6 text-slate-400 text-xs">
-                      <Terminal className="w-8 h-8 text-slate-300 dark:text-slate-700 mb-2 stroke-1" />
-                      <p>{logs.length === 0 ? 'No logs emitted during this execution.' : 'No logs match current filter.'}</p>
-                    </div>
-                  ) : (
-                    filteredLogs.map((log, idx) => {
-                      const isError = log.level === 'ERROR' || log.level === 'CRITICAL';
-                      const isWarn = log.level === 'WARNING' || log.level === 'WARN';
-                      const isStdout = log.level === 'STDOUT' || log.level === 'STDERR';
-
-                      return (
-                        <div
-                          key={idx}
-                          className={`p-3 rounded-xl border text-xs leading-relaxed ${
-                            isError
-                              ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-                              : isWarn
-                              ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-                              : isStdout
-                              ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-200'
-                              : 'bg-slate-900/90 border-slate-800 text-slate-200'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between text-[10px] opacity-75 mb-1 font-mono">
-                            <span className="font-bold uppercase tracking-wider">{log.level}</span>
-                            <span className="truncate max-w-[200px]" title={log.logger}>
-                              {log.logger}
-                            </span>
-                          </div>
-                          <div className="whitespace-pre-wrap break-words">{log.message}</div>
-                          {log.exc_info && (
-                            <pre className="mt-2 p-2 rounded bg-black/40 text-rose-300 text-[10px] overflow-x-auto whitespace-pre-wrap">
-                              {log.exc_info}
-                            </pre>
-                          )}
-                        </div>
-                      );
-                    })
+                  {fn.is_async && (
+                    <span className="tag-badge" style={{ background: 'var(--emerald-subtle)', color: 'var(--emerald)' }}>
+                      async
+                    </span>
                   )}
                 </div>
-              </div>
-            )}
-
-            {outputTab === 'references' && (
-              <div className="flex-1 flex flex-col overflow-hidden p-5">
-                {isLoadingInspection ? (
-                  <div className="h-full flex flex-col items-center justify-center text-center p-8 text-blue-500">
-                    <Activity className="w-8 h-8 animate-spin mb-3" />
-                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Scanning Workspace Call Sites...</p>
-                    <p className="text-xs text-slate-400 mt-1">Analyzing AST invocations across user python files</p>
-                  </div>
-                ) : !selectedFunc ? (
-                  <div className="h-full flex flex-col items-center justify-center text-center p-8 text-slate-400">
-                    <Code2 className="w-10 h-10 text-slate-300 dark:text-slate-700 mb-3" />
-                    <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">No Function Selected</p>
-                    <p className="text-xs text-slate-400 mt-1">Select a function to inspect its source and call sites</p>
-                  </div>
-                ) : (
-                  <div className="flex-1 flex flex-col min-h-0 space-y-3.5">
-                    {/* Sub-tab segmented bar */}
-                    <div className="flex items-center justify-between pb-1 border-b border-slate-200 dark:border-slate-800">
-                      <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg text-xs font-semibold">
-                        <button
-                          onClick={() => setRefSubTab('references')}
-                          className={`px-3 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
-                            refSubTab === 'references'
-                              ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
-                              : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                          }`}
-                        >
-                          <GitFork className="w-3.5 h-3.5 text-blue-500" />
-                          <span>Callers & Usages</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-500/15 text-blue-600 dark:text-blue-400 font-mono">
-                            {inspectionData?.references?.length || 0}
-                          </span>
-                        </button>
-                        <button
-                          onClick={() => setRefSubTab('implementation')}
-                          className={`px-3 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
-                            refSubTab === 'implementation'
-                              ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
-                              : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                          }`}
-                        >
-                          <FileCode2 className="w-3.5 h-3.5 text-emerald-500" />
-                          <span>Source Implementation</span>
-                        </button>
-                      </div>
-
-                      {refSubTab === 'references' && inspectionData?.references && inspectionData.references.length > 3 && (
-                        <div className="relative w-44">
-                          <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                          <input
-                            type="text"
-                            placeholder="Filter callers..."
-                            value={refSearchQuery}
-                            onChange={(e) => setRefSearchQuery(e.target.value)}
-                            className="w-full text-xs pl-7 pr-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-hidden focus:ring-1 focus:ring-blue-500 text-slate-800 dark:text-slate-200"
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Content View */}
-                    {refSubTab === 'implementation' ? (
-                      <div className="flex-1 flex flex-col min-h-0 bg-slate-900 dark:bg-slate-950 rounded-xl border border-slate-800 overflow-hidden shadow-xs">
-                        {/* Header bar */}
-                        <div className="flex items-center justify-between px-3.5 py-2 bg-slate-800/80 border-b border-slate-700/60 text-xs font-mono text-slate-300 shrink-0">
-                          <div className="flex items-center gap-2 truncate">
-                            <span className="text-emerald-400 font-bold">
-                              {inspectionData?.implementation?.rel_path || selectedFunc.file_path.split(/[\\/]/).pop()}
-                            </span>
-                            {inspectionData?.implementation && (
-                              <span className="text-[11px] text-slate-400">
-                                :L{inspectionData.implementation.start_line}-L{inspectionData.implementation.end_line}
-                              </span>
-                            )}
-                            {inspectionData?.implementation?.is_async && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-purple-500/20 text-purple-300 font-semibold">
-                                async
-                              </span>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => {
-                              if (inspectionData?.implementation?.code) {
-                                navigator.clipboard.writeText(inspectionData.implementation.code);
-                                setCopiedCode(true);
-                                setTimeout(() => setCopiedCode(false), 2000);
-                              }
-                            }}
-                            className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-700/50 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer text-xs"
-                            title="Copy full source implementation"
-                          >
-                            {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                            <span>{copiedCode ? 'Copied' : 'Copy Code'}</span>
-                          </button>
-                        </div>
-                        {/* Source Code text */}
-                        <div className="flex-1 overflow-auto p-4 font-mono text-xs text-slate-200 leading-relaxed whitespace-pre selection:bg-blue-500/30">
-                          {inspectionData?.implementation?.code || (
-                            <span className="text-slate-500 italic">No source code extracted for this function.</span>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      /* Callers & References View */
-                      <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-                        {filteredReferences.length === 0 ? (
-                          <div className="h-48 flex flex-col items-center justify-center text-center p-6 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-slate-400">
-                            <GitFork className="w-8 h-8 text-slate-300 dark:text-slate-700 mb-2" />
-                            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                              {refSearchQuery ? 'No callers matching filter' : 'No Callers Found in Workspace'}
-                            </p>
-                            <p className="text-[11px] text-slate-400 max-w-[280px] mt-1">
-                              {refSearchQuery
-                                ? 'Try clearing the caller search query above.'
-                                : 'This function might be an entrypoint, CLI command, or dynamically dispatched MCP tool.'}
-                            </p>
-                          </div>
-                        ) : (
-                          filteredReferences.map((ref, idx) => (
-                            <div
-                              key={`${ref.file_path}-${ref.line}-${idx}`}
-                              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-3 shadow-xs hover:border-blue-500/40 transition-colors"
-                            >
-                              <div className="flex items-center justify-between text-xs font-mono">
-                                <div className="flex items-center gap-2 truncate">
-                                  <FileCode className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                                  <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
-                                    {ref.rel_path}
-                                  </span>
-                                  <span className="px-1.5 py-0.5 rounded-sm bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold text-[11px]">
-                                    :L{ref.line}
-                                  </span>
-                                </div>
-                                <button
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(`${ref.rel_path}:${ref.line}`);
-                                    setCopiedRefLine(ref.line);
-                                    setTimeout(() => setCopiedRefLine(null), 2000);
-                                  }}
-                                  className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer ml-2 shrink-0"
-                                  title="Copy path:line for IDE navigation"
-                                >
-                                  {copiedRefLine === ref.line ? (
-                                    <Check className="w-3 h-3 text-emerald-500" />
-                                  ) : (
-                                    <Copy className="w-3 h-3" />
-                                  )}
-                                  <span>{copiedRefLine === ref.line ? 'Copied' : 'Copy'}</span>
-                                </button>
-                              </div>
-
-                              <div className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                                <span className="font-medium text-slate-600 dark:text-slate-300">Context:</span>
-                                <span className="font-mono text-indigo-600 dark:text-indigo-400 truncate">
-                                  {ref.caller_context}
-                                </span>
-                                {ref.is_internal && (
-                                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
-                                    same file
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Snippet box */}
-                              <div className="mt-2.5 p-2.5 rounded-lg bg-slate-900 text-slate-200 font-mono text-[11px] overflow-x-auto whitespace-pre leading-relaxed border border-slate-800">
-                                {ref.snippet}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+                <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
+                  {shortFile}:{fn.line}
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Quick Function Switcher Modal */}
-      {showFuncModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-start justify-center pt-20 p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-xl rounded-2xl bg-white dark:bg-[#0c1220] border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[75vh]">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 flex-1">
-                <Search className="w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  autoFocus
-                  value={modalSearchQuery}
-                  onChange={(e) => setModalSearchQuery(e.target.value)}
-                  placeholder="Switch function by name, class, param, or file..."
-                  className="w-full bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none font-mono"
-                />
-              </div>
-              <button
-                onClick={() => setShowFuncModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      {/* VS Code Draggable Resizer Bar */}
+      <div
+        className="resizer-v"
+        role="separator"
+        aria-label="Resize callable list"
+        aria-orientation="vertical"
+        aria-valuemin={180}
+        aria-valuemax={500}
+        aria-valuenow={Math.round(leftPaneWidth)}
+        tabIndex={0}
+        onMouseDown={handleMouseDown}
+        onDoubleClick={handleDoubleClickResizer}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+            event.preventDefault();
+            setLeftPaneWidth((width) => Math.max(180, Math.min(500, width + (event.key === 'ArrowLeft' ? -16 : 16))));
+          } else if (event.key === 'Home') setLeftPaneWidth(180);
+          else if (event.key === 'End') setLeftPaneWidth(500);
+        }}
+        title="Drag to resize pane • Double-click to reset"
+      />
 
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
-              {filteredModalFunctions.length === 0 ? (
-                <div className="p-8 text-center text-xs text-slate-400 font-mono">
-                  No matching functions found.
+      {/* Column 2: Right Stage (Invocation & References) */}
+      <div className="sandbox-stage">
+        {/* Navigation Tabs */}
+        <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '6px' }}>
+          <button
+            type="button"
+            className={`vcr-btn ${activeTab === 'exec' ? 'vcr-btn-primary' : ''}`}
+            onClick={() => setActiveTab('exec')}
+          >
+            Interactive Invocation
+          </button>
+          <button
+            type="button"
+            className={`vcr-btn ${activeTab === 'refs' ? 'vcr-btn-primary' : ''}`}
+            onClick={() => setActiveTab('refs')}
+          >
+            References & Code ({inspectionData?.references?.length || 0})
+          </button>
+        </div>
+
+        {/* Tab 1: Interactive Invocation */}
+        {activeTab === 'exec' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {selectedFunc && (
+              <div>
+                <h1 style={{ fontSize: '17px', fontWeight: 750, margin: '0 0 4px' }}>{selectedFunc.name}()</h1>
+                {selectedFunc.docstring && <p style={{ color: 'var(--text-secondary)', fontSize: '12px', margin: 0 }}>{selectedFunc.docstring}</p>}
+              </div>
+            )}
+            {/* Function Header & Parameters Card */}
+            <div className="gloss-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                <div style={{ fontSize: '13px', fontWeight: 700 }}>Python Invocation Expression <span style={{ fontWeight: 500, color: 'var(--text-tertiary)' }}>· Parameters ({cleanParams.length})</span></div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+                    {selectedFunc?.file_path.split(/[\\/]/).pop()}:{selectedFunc?.line} • {cleanParams.length} param{cleanParams.length === 1 ? '' : 's'}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="vcr-btn vcr-btn-primary"
+                  style={{ height: '32px', padding: '0 16px', fontSize: '11.5px' }}
+                  onClick={handleRunExecution}
+                  disabled={!selectedFunc || isRunning}
+                >
+                  {isRunning ? 'Executing...' : 'Run Live Execution'}
+                </button>
+              </div>
+
+              {cleanParams.length === 0 ? (
+                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontStyle: 'italic', padding: '6px 0' }}>
+                  No required parameters. Function executes with default arguments.
                 </div>
               ) : (
-                filteredModalFunctions.map((fn) => {
-                  const isCur = selectedFunc?.name === fn.name && selectedFunc?.file_path === fn.file_path;
-                  const isFnMethod = fn.name.includes('.');
-                  const mName = isFnMethod ? fn.name.split('.').pop() : fn.name;
-                  const cName = isFnMethod ? fn.name.split('.').slice(0, -1).join('.') : null;
-                  const dFile = fn.file_path.split(/[\\/]/).pop();
-
-                  return (
-                    <div
-                      key={`${fn.file_path}-${fn.name}`}
-                      onClick={() => handleSelectFunction(fn)}
-                      className={`p-3 rounded-xl cursor-pointer transition-all border flex items-center justify-between gap-3 ${
-                        isCur
-                          ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-500/40'
-                          : 'border-transparent hover:bg-slate-100/70 dark:hover:bg-slate-800/40 hover:border-slate-200/80 dark:hover:border-slate-800'
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {cName && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-medium">
-                              {cName}
-                            </span>
-                          )}
-                          <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-200">
-                            {mName}()
-                          </span>
-                          {fn.is_async && (
-                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 font-mono">
-                              async
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-slate-400 font-mono mt-1 flex items-center gap-2">
-                          <span>{dFile}:{fn.line}</span>
-                          <span>•</span>
-                          <span>{fn.params.filter((p) => p.name !== 'self' && p.name !== 'cls').length} params</span>
-                        </div>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {cleanParams.map((p) => (
+                    <div key={p.name} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <label htmlFor={`param-${p.name}`} style={{ fontFamily: 'var(--font-mono)', fontSize: '11.5px', width: '120px', color: 'var(--text-secondary)' }}>
+                        {p.name}:
+                      </label>
+                      <input
+                        id={`param-${p.name}`}
+                        aria-label={p.name}
+                        type="text"
+                        value={paramValues[p.name] ?? ''}
+                        placeholder={`Enter ${p.name}...`}
+                        onChange={(e) => {
+                          const nextValues = { ...paramValues, [p.name]: e.target.value };
+                          setParamValues(nextValues);
+                          setCallArgsStr(buildCallString(selectedFunc?.params || [], nextValues));
+                        }}
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-subtle)',
+                          background: 'var(--bg-surface)',
+                          color: 'var(--text-primary)',
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: '11.5px',
+                          width: '240px',
+                        }}
+                      />
+                      {p.annotation && (
+                        <span className="tag-badge" style={{ background: 'rgba(56, 189, 248, 0.12)', color: 'var(--sky)' }}>
+                          {p.annotation}
+                        </span>
+                      )}
                     </div>
-                  );
-                })
+                  ))}
+                </div>
               )}
+              <label htmlFor="python-call-args" className="sandbox-call-label">
+                Call arguments
+                <input
+                  id="python-call-args"
+                  className="sandbox-call-input"
+                  type="text"
+                  value={callArgsStr}
+                  placeholder="amount=500, rate=0.2"
+                  onChange={(event) => setCallArgsStr(event.target.value)}
+                />
+              </label>
+            </div>
+
+            {/* Execution Result Card */}
+            <div className="gloss-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span
+                  style={{
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    color: lastResult ? (lastResult.success ? 'var(--emerald)' : 'var(--rose)') : 'var(--emerald)',
+                  }}
+                >
+                  {lastResult
+                    ? lastResult.success
+                      ? `Execution Succeeded (${lastResult.duration_ms?.toFixed(2)}ms)`
+                      : `Exception Trapped: ${lastResult.error_type || 'Error'}`
+                    : 'Ready to execute'}
+                </span>
+
+                <button
+                  type="button"
+                  className="vcr-btn"
+                  style={{ height: '22px', padding: '0 8px', fontSize: '10px' }}
+                  onClick={copyResult}
+                  disabled={!lastResult}
+                >
+                  {copiedResult ? 'Copied' : 'Copy result'}
+                </button>
+              </div>
+
+              {lastResult && (
+                <div className="sandbox-result-actions">
+                  <button type="button" className="vcr-btn" onClick={() => setOutputTab('result')}>Result</button>
+                  <button type="button" className="vcr-btn" onClick={() => setOutputTab('logs')}>View Logs ({lastResult.logs.length})</button>
+                  <button type="button" className="vcr-btn" onClick={onNavigateToHunter}>View in Timeline Replay</button>
+                </div>
+              )}
+              {lastResult?.error_line && <div className="sandbox-result-actions"><span className="sandbox-message error">Failed at Line {lastResult.error_line}</span><button type="button" className="vcr-btn" onClick={onNavigateToHunter}>🎯 Inspect Failure Line in Timeline Replay</button></div>}
+              {clipboardError && <p role="status" className="sandbox-message">{clipboardError}</p>}
+
+              {outputTab === 'result' && <pre
+                style={{
+                  background: 'var(--bg-code)',
+                  padding: '12px',
+                  borderRadius: '6px',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '11px',
+                  color: lastResult?.success === false ? 'var(--rose)' : 'var(--emerald)',
+                  overflowX: 'auto',
+                  maxHeight: '320px',
+                }}
+              >
+                {lastResult
+                  ? lastResult.return_val || lastResult.error_traceback || lastResult.error || 'No return value'
+                  : 'Run a function to capture its return value, logs, and execution trace.'}
+              </pre>}
+              {lastResult && outputTab === 'logs' && (
+                <div className="sandbox-log-list">
+                  <input
+                    type="search"
+                    aria-label="Search logs by message or logger"
+                    placeholder="Search logs by message or logger"
+                    value={logSearchQuery}
+                    onChange={(event) => setLogSearchQuery(event.target.value)}
+                  />
+                  {filteredLogs.length === 0 ? <p>No logs match this filter.</p> : filteredLogs.map((log, index) => (
+                    <div key={`${log.timestamp}-${log.logger}-${index}`} className="sandbox-log-row">
+                      <strong>{log.level}</strong><span>{log.logger}</span><span>{log.message}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 2: References & Usages */}
+        {activeTab === 'refs' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {inspectionError && <p role="alert" className="sandbox-message error">{inspectionError}</p>}
+            {isLoadingInspection && <p role="status" className="sandbox-message">Loading references and source…</p>}
+            <div className="sandbox-result-actions">
+              <button type="button" className="vcr-btn" onClick={() => setRefSubTab('references')}>Callers & Usages</button>
+              <button type="button" className="vcr-btn" onClick={() => setRefSubTab('implementation')}>Source Implementation</button>
+            </div>
+            {refSubTab === 'references' && <div className="gloss-card" style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700 }}>
+                  Callers & Usages ({inspectionData?.references?.length || 0})
+                </div>
+                <input
+                  type="text"
+                  value={refSearchQuery}
+                  onChange={(e) => setRefSearchQuery(e.target.value)}
+                  placeholder="Filter callers..."
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: '5px',
+                    border: '1px solid var(--border-subtle)',
+                    background: 'var(--bg-surface)',
+                    color: 'var(--text-primary)',
+                    fontSize: '10.5px',
+                    width: '180px',
+                  }}
+                />
+              </div>
+
+              {filteredCallers.length === 0 ? (
+                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontStyle: 'italic', padding: '8px 0' }}>
+                  No active caller references recorded for this callable.
+                </div>
+              ) : (
+                filteredCallers.map((ref) => (
+                  <div key={`${ref.file_path}-${ref.line}`} className="variable-card-box" style={{ fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                      <span style={{ color: 'var(--primary)', fontWeight: 600 }}>
+                        {ref.rel_path}
+                      </span>
+                      <span className="tag-badge" style={{ background: 'var(--primary-subtle)', color: 'var(--primary)' }}>
+                        :L{ref.line}
+                      </span>
+                    </div>
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '10.5px' }}>{ref.caller_context}</div>
+                    <pre style={{ color: 'var(--text-secondary)', fontSize: '10.5px', overflowX: 'auto' }}>{ref.snippet}</pre>
+                  </div>
+                ))
+              )}
+            </div>}
+
+            {/* Source Implementation Preview */}
+            {refSubTab === 'implementation' && inspectionData?.implementation && (
+              <div className="gloss-card" style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700 }}>Source Implementation</span>
+                <pre
+                  style={{
+                    background: 'var(--bg-code)',
+                    padding: '10px',
+                    borderRadius: '6px',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '11px',
+                    color: 'var(--text-primary)',
+                    overflowX: 'auto',
+                    maxHeight: '260px',
+                  }}
+                >
+                  {inspectionData.implementation.code}
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      {showFunctionPicker && (
+        <div className="sandbox-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeFunctionPicker(); }}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="function-picker-title"
+            className="sandbox-function-dialog"
+            onKeyDown={handlePickerKeyDown}
+          >
+            <div className="sandbox-dialog-heading">
+              <h2 id="function-picker-title">Switch Function</h2>
+              <button type="button" className="vcr-btn" onClick={closeFunctionPicker} aria-label="Close function picker">Close</button>
+            </div>
+            <input
+              autoFocus
+              type="search"
+              aria-label="Search functions"
+              placeholder="Switch function by name, class, parameter, or file…"
+              value={pickerQuery}
+              onChange={(event) => setPickerQuery(event.target.value)}
+            />
+            <div className="sandbox-function-options">
+              {filteredPickerFunctions.length === 0 ? <p>No functions match this search.</p> : filteredPickerFunctions.map((fn) => (
+                <button
+                  type="button"
+                  key={`${fn.file_path}-${fn.name}`}
+                  onClick={() => chooseFunction(fn)}
+                  aria-current={selectedFunc?.name === fn.name && selectedFunc.file_path === fn.file_path ? 'true' : undefined}
+                >
+                  <strong>{fn.name}()</strong><span>{fn.file_path.split(/[\\/]/).pop()}:{fn.line}</span>
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -1184,3 +780,5 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
     </div>
   );
 };
+
+export default PlaygroundPage;

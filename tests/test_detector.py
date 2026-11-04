@@ -36,3 +36,18 @@ print(add(2, 3))
 """
     assert detect_execution_profile("calc.py", source_code=script_code) == ExecutionProfile.STANDALONE_SCRIPT
 
+
+def test_run_all_orchestrating_api_and_mcp_is_server_daemon():
+    source = """
+from fastapi import FastAPI
+from mcp.server.fastmcp import FastMCP
+from services.api import start_api
+from services.mcp import start_mcp
+
+api = FastAPI()
+mcp = FastMCP('tools')
+start_api(api)
+start_mcp(mcp)
+"""
+    assert detect_execution_profile("run_all.py", source_code=source) == ExecutionProfile.SERVER_DAEMON
+
