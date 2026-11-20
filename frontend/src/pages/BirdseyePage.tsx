@@ -37,7 +37,70 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [expandedFuncs, setExpandedFuncs] = useState<Record<string, boolean>>({});
 
+  const [hoveredLineNum, setHoveredLineNum] = useState<number | null>(null);
+  const [leftWidth, setLeftWidth] = useState<number>(280);
+  const [rightWidth, setRightWidth] = useState<number>(320);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const isDraggingLeftRef = useRef(false);
+  const isDraggingRightRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   const lineRefs = useRef<Record<number, HTMLDivElement | null>>({});
+
+  const handleLeftSplitterDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingLeftRef.current = true;
+    setIsDragging(true);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isDraggingLeftRef.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const newWidth = Math.max(180, Math.min(520, ev.clientX - rect.left));
+      setLeftWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      isDraggingLeftRef.current = false;
+      setIsDragging(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const handleRightSplitterDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingRightRef.current = true;
+    setIsDragging(true);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isDraggingRightRef.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const newWidth = Math.max(220, Math.min(620, rect.right - ev.clientX));
+      setRightWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      isDraggingRightRef.current = false;
+      setIsDragging(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
 
   // 1. Group events into structured function calls
   const calls = useMemo<CallRecord[]>(() => buildCallRecords(session), [session]);
@@ -234,11 +297,14 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
   }
 
   return (
-    <div className="expression-flow-page flex-1 flex flex-col min-h-0 overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 font-sans transition-colors pb-20">
-      <div className="flex-1 grid grid-cols-12 overflow-hidden">
+    <div className="expression-flow-page flex-1 flex flex-col min-h-0 overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 font-sans transition-colors pb-1">
+      <div ref={containerRef} className="flex-1 flex min-h-0 overflow-hidden relative">
         
-        {/* COLUMN 1: Function Calls Sidebar (280px / 3 cols) */}
-        <aside className="col-span-12 md:col-span-3 border-r border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#090e1a]/90 flex flex-col h-full overflow-hidden transition-colors">
+        {/* COLUMN 1: Function Calls Sidebar (Resizable) */}
+        <aside
+          style={{ width: `${leftWidth}px` }}
+          className={`shrink-0 border-r border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#090e1a]/90 flex flex-col h-full overflow-hidden select-none ${isDragging ? '' : 'transition-all'}`}
+        >
           <div className="p-3 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-[#0b1220]/90">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
@@ -300,6 +366,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                           return (
                             <div
                               key={call.id}
+                              title={`#${idx + 1} ${call.func}(${argsSummary})${call.return_val ? ` ➔ ${call.return_val}` : ''}`}
                               onClick={() => {
                                 setSelectedCallId(call.id);
                                 setSelectedExprText(null);
@@ -321,14 +388,14 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                                 </span>
                               </div>
 
-                              <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mb-1">
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 select-all break-all line-clamp-2 hover:line-clamp-none transition-all mb-1" title={argsSummary}>
                                 {argsSummary}
                               </div>
 
                               {call.return_val && !isFuturePending(call.return_val) && (
-                                <div className="text-[10px] text-emerald-600 dark:text-emerald-400 truncate font-medium flex items-center gap-1">
-                                  <span>➔</span>
-                                  <span className="truncate">{call.return_val}</span>
+                                <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium flex items-start gap-1 select-all break-all line-clamp-2 hover:line-clamp-none transition-all" title={call.return_val}>
+                                  <span className="shrink-0">➔</span>
+                                  <span className="select-all break-all">{call.return_val}</span>
                                 </div>
                               )}
                             </div>
@@ -342,8 +409,16 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
           </div>
         </aside>
 
+        {/* LEFT DRAGGABLE RESIZER SPLITTER */}
+        <div
+          onMouseDown={handleLeftSplitterDown}
+          onDoubleClick={() => setLeftWidth(280)}
+          className="resizer-h"
+          title="Drag to resize Calls History (Double-click to reset)"
+        />
+
         {/* COLUMN 2: Center Code Studio */}
-        <main className="col-span-12 md:col-span-6 flex flex-col h-full bg-white dark:bg-[#050811] border-r border-slate-200 dark:border-white/[0.08] overflow-hidden transition-colors">
+        <main className="flex-1 min-w-[320px] flex flex-col h-full bg-white dark:bg-[#050811] border-r border-slate-200 dark:border-white/[0.08] overflow-hidden transition-colors">
           <div className="p-3 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50/80 dark:bg-[#090e1a]/90 flex items-center justify-between">
             <div className="min-w-0 pr-3">
               <div className="flex items-center gap-2 mb-1">
@@ -351,12 +426,12 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                   {activeCall ? `${activeCall.func}()` : 'No function selected'}
                 </span>
                 {activeCall?.return_val && !isFuturePending(activeCall.return_val) && (
-                  <span className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 truncate max-w-xs">
+                  <span className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 select-all break-all max-w-xl hover:max-w-none transition-all" title={activeCall.return_val}>
                     ➔ {activeCall.return_val}
                   </span>
                 )}
               </div>
-              <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate">
+              <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 select-all break-all line-clamp-1 hover:line-clamp-none transition-all" title={activeCall ? Object.entries(activeCall.args).map(([k, v]) => `${k}=${v}`).join(', ') : ''}>
                 {activeCall
                   ? Object.entries(activeCall.args).map(([k, v]) => `${k}=${v}`).join(', ') || 'no arguments'
                   : ''}
@@ -409,6 +484,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
               const hasExprs = lineExprs.length > 0;
               const isReturnStep = lineNum === returnLine;
               const isSelectedStep = lineNum === selectedStep?.line;
+              const isHoveredLine = hoveredLineNum === lineNum;
 
               return (
                 <div
@@ -416,11 +492,22 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                   ref={(el) => {
                     lineRefs.current[lineNum] = el;
                   }}
-                  className={`group flex flex-col rounded px-2 py-1 transition-colors ${isSelectedStep ? 'expression-active-line' : ''} ${
-                    hasExprs || lineDiffs || isReturnStep
+                  onMouseEnter={() => setHoveredLineNum(lineNum)}
+                  onMouseLeave={() => setHoveredLineNum((prev) => (prev === lineNum ? null : prev))}
+                  onClick={() => {
+                    const lineEv = selectedStep?.line === lineNum ? selectedStep : latestEventByLine.get(lineNum);
+                    if (lineEv) focusTraceEvent(lineEv);
+                  }}
+                  className={`group flex flex-col rounded px-2 py-1 transition-colors cursor-pointer ${
+                    isSelectedStep
+                      ? 'expression-active-line'
+                      : isHoveredLine
+                      ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-l-2 border-indigo-500 shadow-xs'
+                      : hasExprs || lineDiffs || isReturnStep
                       ? 'bg-slate-50/70 dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-900/70'
                       : 'hover:bg-slate-50 dark:hover:bg-slate-900/20 opacity-75'
                   }`}
+                  title={hasExprs || lineDiffs || isReturnStep ? `Line ${lineNum} (executed) · Click to inspect execution step` : `Line ${lineNum}`}
                 >
                   <div className="flex items-start">
                     <span className="w-8 text-right pr-3 text-slate-400 dark:text-slate-600 select-none text-xs flex-shrink-0">
@@ -443,14 +530,14 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                     const branchExpr = taken ? trueExpr : falseExpr;
                     return (
                       <div className="ml-8 mt-1 flex items-center">
-                        <button type="button" onClick={() => branchEvent && focusTraceEvent(branchEvent)}
+                        <button type="button" onClick={(e) => { e.stopPropagation(); branchEvent && focusTraceEvent(branchEvent); }}
                           onMouseEnter={() => { setHoveredBranchEvent(branchEvent ?? null); setHoveredExpr(null); setHoveredLocalName(null); }}
                           onMouseLeave={() => setHoveredBranchEvent(null)}
                           onFocus={() => { setHoveredBranchEvent(branchEvent ?? null); setHoveredExpr(null); setHoveredLocalName(null); }}
                           onBlur={() => setHoveredBranchEvent(null)}
                           aria-label={`Line ${lineNum}: branch ${taken ? 'taken' : 'skipped'} (${branchExpr?.val}); inspect evaluation`}
-                          title="Inspect this decision; click to select its execution step"
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold border focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 ${taken ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30' : 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30'}`}>
+                          title={`Inspect this decision (${taken ? 'taken' : 'skipped'}); click to select its execution step`}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold border focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 cursor-pointer ${taken ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30' : 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30'}`}>
                           {taken ? '✓ Branch taken' : '× Branch skipped'} · {branchExpr?.val} · step {branchEvent?.seq ?? '—'}
                         </button>
                       </div>
@@ -463,16 +550,18 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                       {Object.entries(lineDiffs).map(([vName, diff]) => (
                         <button type="button"
                           key={vName}
+                          onClick={(e) => e.stopPropagation()}
                           onMouseEnter={() => { setHoveredLocalName(vName); setHoveredExpr(null); setHoveredBranchEvent(null); }}
                           onMouseLeave={() => setHoveredLocalName(null)}
                           onFocus={() => { setHoveredLocalName(vName); setHoveredExpr(null); setHoveredBranchEvent(null); }}
                           onBlur={() => setHoveredLocalName(null)}
                           aria-label={`${vName} changed from ${diff.old} to ${diff.new}; inspect variable`}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 shadow-xs"
+                          title={`${vName} := ${diff.new} (was ${diff.old})`}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 shadow-xs cursor-pointer"
                         >
                           <span className="font-semibold">{vName}</span>
                           <span>:=</span>
-                          <span className="font-bold truncate max-w-[160px]">{diff.new}</span>
+                          <span className="font-bold select-all break-all max-w-[500px] hover:max-w-none transition-all">{diff.new}</span>
                         </button>
                       ))}
                     </div>
@@ -503,7 +592,8 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                         return (
                           <div key={`expr-wrapper-${lineNum}-${i}-${expr.text}`} className="relative inline-block">
                             <button
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 setSelectedExprText(expr.text);
                                 handleTogglePin(expr);
                               }}
@@ -512,15 +602,15 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                               onFocus={() => { setHoveredExpr(expr); setHoveredLocalName(null); setHoveredBranchEvent(null); }}
                               onBlur={() => setHoveredExpr(null)}
                               className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border transition-all cursor-pointer ${badgeCls}`}
-                              title={`Click to pin or inspect: ${expr.text}`}
+                              title={`${expr.text} = ${expr.val} · Click to pin or inspect`}
                             >
-                              <span className="truncate max-w-[160px] opacity-90">{expr.text}</span>
+                              <span className="select-all break-all max-w-[320px] hover:max-w-none transition-all opacity-90">{expr.text}</span>
                               {isTrue ? (
                                 <span className="font-bold">✔ True</span>
                               ) : isFalse ? (
                                 <span className="font-bold">✖ False</span>
                               ) : (
-                                <span className="font-bold opacity-100 text-emerald-600 dark:text-emerald-400 group-hover:text-white">
+                                <span className="font-bold opacity-100 text-emerald-600 dark:text-emerald-400 group-hover:text-white select-all break-all max-w-[500px] hover:max-w-none transition-all" title={`= ${expr.val}`}>
                                   = {expr.val}
                                 </span>
                               )}
@@ -535,7 +625,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                   {/* Return Line Highlight */}
                   {isReturnStep && activeCall?.return_val && !isFuturePending(activeCall.return_val) && (
                     <div className="ml-8 mt-1 flex items-center">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 select-all break-all max-w-2xl hover:max-w-none transition-all" title={activeCall.return_val}>
                         <span>➔</span>
                         <span>Return: {activeCall.return_val}</span>
                       </span>
@@ -581,15 +671,15 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                 return (
                   <div className="flex items-center gap-3 w-full min-w-0">
                     <span className="text-slate-400 text-[10px] uppercase font-semibold shrink-0">Expression:</span>
-                    <span className="px-2 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.1] font-semibold text-slate-800 dark:text-slate-200 truncate max-w-xs">
+                    <span className="px-2 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.1] font-semibold text-slate-800 dark:text-slate-200 select-all max-w-[320px] truncate hover:max-w-none transition-all" title={activeExpr.text}>
                       {activeExpr.text}
                     </span>
                     <span className="text-slate-400 text-[10px] uppercase font-semibold shrink-0">Value:</span>
-                    <span className={`px-2 py-0.5 rounded border font-bold truncate max-w-sm ${
+                    <span className={`px-2 py-0.5 rounded border font-bold select-all break-all max-w-[500px] overflow-x-auto ${
                       isTrue ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' :
                       isFalse ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30' :
                       'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20'
-                    }`}>
+                    }`} title={activeExpr.val}>
                       {isTrue ? '✔ True' : isFalse ? '✖ False' : activeExpr.val}
                     </span>
                     {activeExpr.type_name && (
@@ -601,6 +691,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                       <button
                         onClick={() => handleCopy(activeExpr.val, `bar-${activeExpr.text}`)}
                         className="px-2 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.1] text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 text-[11px] cursor-pointer"
+                        title="Copy full evaluated expression value"
                       >
                         {copiedKey === `bar-${activeExpr.text}` ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                         <span>{copiedKey === `bar-${activeExpr.text}` ? 'Copied' : 'Copy'}</span>
@@ -608,6 +699,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                       <button
                         onClick={() => handleTogglePin(activeExpr)}
                         className="px-2 py-1 rounded bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-300 flex items-center gap-1 text-[11px] cursor-pointer"
+                        title="Pin this expression to watchlist"
                       >
                         <Pin className="w-3 h-3" />
                         <span>{pinnedList.some((p) => p.text === activeExpr.text) ? 'Unpin' : 'Pin'}</span>
@@ -616,17 +708,67 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                   </div>
                 );
               })()
+            ) : hoveredLineNum ? (
+              (() => {
+                const lineEvent = selectedStep?.line === hoveredLineNum ? selectedStep : latestEventByLine.get(hoveredLineNum);
+                const lineExprs = lineExprsMap.get(hoveredLineNum) || [];
+                const lineDiffs = lineEvent?.vars_diff ?? lineVarsDiffMap.get(hoveredLineNum);
+                const lineCode = sourceLines[hoveredLineNum - 1]?.trim() || '';
+                const diffEntries = Object.entries(lineDiffs || {});
+
+                return (
+                  <div className="w-full min-w-0 flex flex-wrap items-center gap-2" role="status" aria-live="polite">
+                    <strong className="text-indigo-600 dark:text-indigo-400 shrink-0">Line {hoveredLineNum}</strong>
+                    <code className="px-2 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.1] text-slate-800 dark:text-slate-200 font-mono text-[11px] truncate max-w-sm" title={lineCode}>
+                      {lineCode}
+                    </code>
+                    {lineEvent ? (
+                      <span className="rounded-full px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 shrink-0 text-[10px] font-bold">
+                        step #{lineEvent.seq} ({lineEvent.kind})
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 text-[10px]">not executed in this call</span>
+                    )}
+                    {diffEntries.map(([vName, diff]) => (
+                      <span key={`h-diff-${vName}`} className="rounded px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-[10px] font-mono select-all" title={`${vName} changed: ${diff.old} ➔ ${diff.new}`}>
+                        <strong>{vName}</strong> := {diff.new}
+                      </span>
+                    ))}
+                    {lineExprs.map((expr, eIdx) => (
+                      <span key={`h-expr-${eIdx}`} className="rounded px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/40 text-slate-700 dark:text-slate-200 border border-indigo-200 dark:border-indigo-800/50 text-[10px] font-mono select-all" title={`${expr.text} = ${expr.val}`}>
+                        {expr.text} = <strong>{expr.val}</strong>
+                      </span>
+                    ))}
+                    {hoveredLineNum === returnLine && activeCall?.return_val && (
+                      <span className="rounded px-2 py-0.5 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-mono font-bold select-all" title={activeCall.return_val}>
+                        ➔ Return: {activeCall.return_val}
+                      </span>
+                    )}
+                  </div>
+                );
+              })()
             ) : (
               <div className="flex items-center gap-2 text-slate-400 text-[11px]" role="status" aria-live="polite">
                 <span className="w-2 h-2 rounded-full bg-slate-400" />
-                <span>Hover or focus an expression, variable, or branch decision to inspect its captured value and execution step.</span>
+                <span>Move mouse over any code line, variable badge, or branch decision to inspect live execution state.</span>
               </div>
             )}
           </div>
         </main>
 
-        {/* COLUMN 3: Right Inspection Dock */}
-        <aside className="col-span-12 md:col-span-3 flex flex-col h-full bg-white dark:bg-[#090e1a]/90 overflow-hidden transition-colors">
+        {/* RIGHT DRAGGABLE RESIZER SPLITTER */}
+        <div
+          onMouseDown={handleRightSplitterDown}
+          onDoubleClick={() => setRightWidth(320)}
+          className="resizer-h"
+          title="Drag to resize Inspection Dock (Double-click to reset)"
+        />
+
+        {/* COLUMN 3: Right Inspection Dock (Resizable) */}
+        <aside
+          style={{ width: `${rightWidth}px` }}
+          className={`shrink-0 flex flex-col h-full bg-white dark:bg-[#090e1a]/90 overflow-hidden select-none ${isDragging ? '' : 'transition-all'}`}
+        >
           <div className="h-11 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50/80 dark:bg-[#0b1220]/90 px-2 flex items-center justify-between">
             <div className="flex items-center gap-1">
               <button
@@ -725,7 +867,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                         </div>
 
                         {/* Source code preview */}
-                        <div className="font-mono text-[11px] text-slate-800 dark:text-slate-200 truncate bg-white dark:bg-slate-950/80 p-1.5 rounded border border-slate-200/60 dark:border-white/[0.06] mb-1.5">
+                        <div className="font-mono text-[11px] text-slate-800 dark:text-slate-200 select-all break-all bg-white dark:bg-slate-950/80 p-1.5 rounded border border-slate-200/60 dark:border-white/[0.06] mb-1.5">
                           {ev.src || `(line ${ev.line})`}
                         </div>
 
@@ -754,10 +896,10 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                         {hasDiffs && (
                           <div className="space-y-0.5 mb-1 text-[10px] font-mono">
                             {diffEntries.map(([vName, diff]) => (
-                              <div key={vName} className="flex items-center gap-1 text-slate-600 dark:text-slate-400">
+                              <div key={vName} className="flex items-center gap-1 text-slate-600 dark:text-slate-400 select-all break-all" title={`${vName} changed: ${diff.old} ➔ ${diff.new}`}>
                                 <span className="font-semibold text-indigo-600 dark:text-indigo-400">{vName}</span>
                                 <span>:=</span>
-                                <span className="text-emerald-600 dark:text-emerald-400 font-bold truncate max-w-[140px]">{diff.new}</span>
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold select-all break-all" title={diff.new}>{diff.new}</span>
                               </div>
                             ))}
                           </div>
@@ -769,10 +911,11 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                             {lineExprs.map((expr, eIdx) => (
                               <span
                                 key={eIdx}
-                                className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-mono bg-indigo-50/70 dark:bg-indigo-950/40 text-slate-700 dark:text-slate-300 border border-indigo-200/50 dark:border-indigo-800/50"
+                                title={`${expr.text} = ${expr.val}`}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-mono bg-indigo-50/70 dark:bg-indigo-950/40 text-slate-700 dark:text-slate-300 border border-indigo-200/50 dark:border-indigo-800/50 select-all break-all"
                               >
-                                <span className="opacity-80 truncate max-w-[90px]">{expr.text}</span>
-                                <span className="font-bold text-emerald-600 dark:text-emerald-400">= {expr.val}</span>
+                                <span className="opacity-80 select-all break-all">{expr.text}</span>
+                                <span className="font-bold text-emerald-600 dark:text-emerald-400 select-all break-all" title={expr.val}>= {expr.val}</span>
                               </span>
                             ))}
                           </div>
@@ -780,17 +923,17 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
 
                         {/* Return outcome */}
                         {isReturn && ev.return_val && !isFuturePending(ev.return_val) && (
-                          <div className="mt-1 text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                          <div className="mt-1 text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 select-all break-all" title={ev.return_val}>
                             <span>➔</span>
-                            <span className="truncate">Returned {ev.return_val}</span>
+                            <span className="select-all break-all" title={ev.return_val}>Returned {ev.return_val}</span>
                           </div>
                         )}
 
                         {/* Exception outcome */}
                         {isException && ev.exc_type && (
-                          <div className="mt-1 text-[11px] font-mono font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                          <div className="mt-1 text-[11px] font-mono font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1 select-all break-all" title={`${ev.exc_type}: ${ev.exc_val}`}>
                             <span>⚠</span>
-                            <span className="truncate">{ev.exc_type}: {ev.exc_val}</span>
+                            <span className="select-all break-all" title={`${ev.exc_type}: ${ev.exc_val}`}>{ev.exc_type}: {ev.exc_val}</span>
                           </div>
                         )}
                       </div>
@@ -821,7 +964,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1.5">
-                          <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[190px]">
+                          <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[220px] hover:max-w-none transition-all" title={expr.text}>
                             {expr.text}
                           </span>
                           <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
@@ -830,7 +973,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                         </div>
 
                         <div className="flex items-center justify-between p-1.5 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/[0.08]">
-                          <span className="text-emerald-600 dark:text-emerald-400 font-bold truncate max-w-[200px]">
+                          <span className="text-emerald-600 dark:text-emerald-400 font-bold select-all break-all" title={expr.val}>
                             {expr.val}
                           </span>
                           <button
@@ -838,7 +981,7 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                               e.stopPropagation();
                               handleCopy(expr.val, `val-${i}`);
                             }}
-                            className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                            className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer shrink-0 ml-1.5"
                             title="Copy value"
                           >
                             {copiedKey === `val-${i}` ? (
@@ -867,13 +1010,13 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                       key={k}
                       onMouseEnter={() => { setHoveredLocalName(k); setHoveredExpr(null); setHoveredBranchEvent(null); }}
                       onMouseLeave={() => setHoveredLocalName(null)}
-                      className="p-2 rounded bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/[0.08] flex items-center justify-between"
+                      className="p-2 rounded bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/[0.08] flex items-center justify-between gap-2"
                     >
-                      <button type="button" onFocus={() => { setHoveredLocalName(k); setHoveredExpr(null); setHoveredBranchEvent(null); }} onBlur={() => setHoveredLocalName(null)} onClick={() => setHoveredLocalName(k)} className="font-semibold text-slate-700 dark:text-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 rounded">{k}</button>
-                      <span className="text-emerald-600 dark:text-emerald-400 truncate max-w-[160px] font-medium">
+                      <button type="button" onFocus={() => { setHoveredLocalName(k); setHoveredExpr(null); setHoveredBranchEvent(null); }} onBlur={() => setHoveredLocalName(null)} onClick={() => setHoveredLocalName(k)} className="font-semibold text-slate-700 dark:text-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 rounded shrink-0">{k}</button>
+                      <span className="text-emerald-600 dark:text-emerald-400 select-all break-all font-medium text-right" title={v}>
                         {v}
                       </span>
-                      {inspectedDiffs[k] && <span className="text-[10px] text-amber-600 dark:text-amber-300">changed</span>}
+                      {inspectedDiffs[k] && <span className="text-[10px] text-amber-600 dark:text-amber-300 shrink-0">changed</span>}
                     </div>
                   ))
                 )}
@@ -905,17 +1048,18 @@ export const BirdseyePage: React.FC<BirdseyePageProps> = ({ session, onCallChang
                       className="p-2 rounded bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/[0.08] space-y-1"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[180px]">
+                        <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[220px] hover:max-w-none transition-all" title={p.text}>
                           {p.text}
                         </span>
                         <button
                           onClick={() => setPinnedList((prev) => prev.filter((item) => item.id !== p.id))}
-                          className="text-slate-400 hover:text-rose-500 cursor-pointer"
+                          className="text-slate-400 hover:text-rose-500 cursor-pointer p-1"
+                          title="Remove from watchlist"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
-                      <div className="text-emerald-600 dark:text-emerald-400 font-bold truncate">
+                      <div className="text-emerald-600 dark:text-emerald-400 font-bold select-all break-all" title={p.val}>
                         {p.val}
                       </div>
                     </div>

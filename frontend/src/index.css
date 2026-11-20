@@ -309,33 +309,35 @@ body {
 /* ==========================================================================
    VS CODE STYLE INTERACTIVE SPLITTERS & RESIZABLE CONTAINERS
    ========================================================================== */
-.resizer-v {
-  width: 5px;
+.resizer-h, .resizer-v {
+  width: 8px;
   cursor: col-resize;
   background: transparent;
   position: relative;
-  z-index: 20;
+  z-index: 25;
   user-select: none;
   transition: background 0.15s;
   flex-shrink: 0;
+  touch-action: none;
 }
 
-.resizer-v::after {
+.resizer-h::after, .resizer-v::after {
   content: '';
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 2px;
-  width: 1px;
+  left: 3px;
+  width: 2px;
   background: var(--border-subtle);
   transition: all 0.15s;
 }
 
+.resizer-h:hover::after, .resizer-h.resizing::after,
 .resizer-v:hover::after, .resizer-v.resizing::after {
-  background: var(--splitter-hover);
-  box-shadow: 0 0 6px var(--primary);
+  background: #6366f1;
+  box-shadow: 0 0 10px #6366f1;
   width: 3px;
-  left: 1px;
+  left: 2px;
 }
 
 .pane-toolbar {
@@ -1236,15 +1238,13 @@ html:not(.dark) .app-shell::after { opacity: 0.12; animation: none; }
   background: linear-gradient(135deg, #e9edf6, #eeedf7 58%, #e8f1f2) !important;
 }
 .expression-flow-page > div {
-  display: grid !important;
-  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(285px, 320px);
-  grid-template-rows: minmax(0, 1fr);
+  display: flex !important;
+  flex-direction: row !important;
   min-height: 0;
   overflow: hidden;
+  height: 100%;
+  width: 100%;
 }
-.expression-flow-page > div > aside:first-child { grid-column: 1; grid-row: 1; min-width: 0; }
-.expression-flow-page > div > main { grid-column: 2; grid-row: 1; min-width: 0; }
-.expression-flow-page > div > aside:last-child { grid-column: 3; grid-row: 1; min-width: 0; }
 .expression-flow-page aside,
 .expression-flow-page main {
   background-color: var(--bg-surface) !important;
@@ -1292,22 +1292,7 @@ html.dark .expression-flow-page aside > div:first-child,
 html.dark .expression-flow-page main > div:first-child { background-color: rgba(15, 24, 41, 0.98) !important; }
 html.dark .expression-active-line { background: rgba(85, 112, 194, .16) !important; outline-color: rgba(107, 137, 226, .45); }
 
-@media (max-width: 1100px) {
-  .expression-flow-page > div {
-    grid-template-columns: minmax(190px, 27%) minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) minmax(230px, 34dvh);
-    overflow: auto;
-  }
-  .expression-flow-page > div > aside:last-child { grid-column: 1 / -1; grid-row: 2; }
-}
 @media (max-width: 620px) {
-  .expression-flow-page > div {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(150px, 22dvh) minmax(330px, 1fr) minmax(250px, 34dvh);
-  }
-  .expression-flow-page > div > aside:first-child { grid-column: 1; grid-row: 1; }
-  .expression-flow-page > div > main { grid-column: 1; grid-row: 2; }
-  .expression-flow-page > div > aside:last-child { grid-column: 1; grid-row: 3; }
   .expression-step-control { gap: 1px; font-size: 10px; }
   .expression-step-control button { min-width: 25px; min-height: 25px; }
 }
@@ -1433,13 +1418,16 @@ html:not(.dark) .dashboard-kpi-strip .group:hover {
 .timeline-controller {
   box-sizing: border-box;
   min-width: min(720px, calc(100vw - 24px));
-  background: color-mix(in srgb, var(--glass-nav) 96%, var(--bg-card));
-  border-color: color-mix(in srgb, var(--glass-border) 80%, var(--primary));
-  box-shadow: 0 24px 64px -28px rgba(24, 34, 58, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 html.dark .timeline-controller {
-  background: rgba(8, 15, 29, 0.98);
-  box-shadow: 0 24px 64px -28px rgba(0, 0, 0, 0.82), inset 0 1px 0 rgba(210, 232, 255, 0.1);
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
 }
 .timeline-controller input[type="range"] { min-width: 56px; }
 .timeline-controller > div { min-width: 0; }

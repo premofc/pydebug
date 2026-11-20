@@ -36,8 +36,8 @@ class TestSafeRepr:
         s = {99}
         assert safe_repr(s) == "{99}"
 
-        # Truncation when > 20 items
-        large_list = list(range(30))
+        # Truncation when > 50 items
+        large_list = list(range(70))
         rep_large = safe_repr(large_list)
         assert rep_large.endswith(", ...]")
 
@@ -48,7 +48,7 @@ class TestSafeRepr:
         assert "'b': 2" in rep
 
         # Large dict truncation
-        large_d = {f"k{i}": i for i in range(30)}
+        large_d = {f"k{i}": i for i in range(70)}
         rep_large = safe_repr(large_d)
         assert rep_large.endswith(", ...}")
 
@@ -58,9 +58,9 @@ class TestSafeRepr:
         assert safe_repr(ent) == "Entity(alpha)"
 
     def test_long_string_truncation(self):
-        very_long = "z" * 300
+        very_long = "z" * 4500
         rep = safe_repr(very_long)
-        assert len(rep) <= 240
+        assert len(rep) <= 4000
         assert rep.endswith("...")
 
     def test_unprintable_object_handling(self):

@@ -33,8 +33,8 @@ def _unpack_custom_object(v: Any, _depth: int, _seen: set[int]) -> str | None:
         try:
             dump = v.model_dump()
             if isinstance(dump, dict):
-                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:60]}" for k, val in list(dump.items())[:12])
-                tail = ", ..." if len(dump) > 12 else ""
+                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:500]}" for k, val in list(dump.items())[:40])
+                tail = ", ..." if len(dump) > 40 else ""
                 return f"{cls_name}({inner}{tail})"
         except Exception:
             pass
@@ -42,8 +42,8 @@ def _unpack_custom_object(v: Any, _depth: int, _seen: set[int]) -> str | None:
         try:
             dump = v.dict()
             if isinstance(dump, dict):
-                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:60]}" for k, val in list(dump.items())[:12])
-                tail = ", ..." if len(dump) > 12 else ""
+                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:500]}" for k, val in list(dump.items())[:40])
+                tail = ", ..." if len(dump) > 40 else ""
                 return f"{cls_name}({inner}{tail})"
         except Exception:
             pass
@@ -53,8 +53,8 @@ def _unpack_custom_object(v: Any, _depth: int, _seen: set[int]) -> str | None:
         try:
             dump = dataclasses.asdict(v)
             if isinstance(dump, dict):
-                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:60]}" for k, val in list(dump.items())[:12])
-                tail = ", ..." if len(dump) > 12 else ""
+                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:500]}" for k, val in list(dump.items())[:40])
+                tail = ", ..." if len(dump) > 40 else ""
                 return f"{cls_name}({inner}{tail})"
         except Exception:
             pass
@@ -64,8 +64,8 @@ def _unpack_custom_object(v: Any, _depth: int, _seen: set[int]) -> str | None:
         try:
             dump = v._asdict()
             if isinstance(dump, dict):
-                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:60]}" for k, val in list(dump.items())[:12])
-                tail = ", ..." if len(dump) > 12 else ""
+                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:500]}" for k, val in list(dump.items())[:40])
+                tail = ", ..." if len(dump) > 40 else ""
                 return f"{cls_name}({inner}{tail})"
         except Exception:
             pass
@@ -75,8 +75,8 @@ def _unpack_custom_object(v: Any, _depth: int, _seen: set[int]) -> str | None:
         try:
             clean_attrs = {k: val for k, val in v.__dict__.items() if not k.startswith("_")}
             if clean_attrs:
-                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:60]}" for k, val in list(clean_attrs.items())[:12])
-                tail = ", ..." if len(clean_attrs) > 12 else ""
+                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:500]}" for k, val in list(clean_attrs.items())[:40])
+                tail = ", ..." if len(clean_attrs) > 40 else ""
                 return f"{cls_name}({inner}{tail})"
         except Exception:
             pass
@@ -87,8 +87,8 @@ def _unpack_custom_object(v: Any, _depth: int, _seen: set[int]) -> str | None:
             slots = [v.__slots__] if isinstance(v.__slots__, str) else v.__slots__
             clean_attrs = {s: getattr(v, s) for s in slots if hasattr(v, s) and not s.startswith("_")}
             if clean_attrs:
-                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:60]}" for k, val in list(clean_attrs.items())[:12])
-                tail = ", ..." if len(clean_attrs) > 12 else ""
+                inner = ", ".join(f"{k}={safe_repr(val, _depth + 1, _seen)[:500]}" for k, val in list(clean_attrs.items())[:40])
+                tail = ", ..." if len(clean_attrs) > 40 else ""
                 return f"{cls_name}({inner}{tail})"
         except Exception:
             pass
@@ -109,7 +109,7 @@ def safe_repr(v: Any, _depth: int = 0, _seen: set[int] | None = None) -> str:
         # Primitive / scalar types return fast repr
         if isinstance(v, (int, float, bool, str, bytes, type(None))):
             r = repr(v)
-            return r if len(r) <= 240 else r[:237] + "..."
+            return r if len(r) <= 4000 else r[:3997] + "..."
 
         vid = id(v)
         if vid in _seen:
@@ -120,11 +120,11 @@ def safe_repr(v: Any, _depth: int = 0, _seen: set[int] | None = None) -> str:
         if hasattr(v, "_fields") and isinstance(v, tuple) and type(v) is not tuple:
             unpacked = _unpack_custom_object(v, _depth, _seen)
             if unpacked is not None:
-                return unpacked if len(unpacked) <= 240 else unpacked[:237] + "..."
+                return unpacked if len(unpacked) <= 4000 else unpacked[:3997] + "..."
 
         if _depth < 3 and isinstance(v, (list, tuple, set, frozenset)):
-            inner = ", ".join(safe_repr(x, _depth + 1, _seen)[:80] for x in list(v)[:20])
-            tail = ", ..." if len(v) > 20 else ""
+            inner = ", ".join(safe_repr(x, _depth + 1, _seen)[:500] for x in list(v)[:50])
+            tail = ", ..." if len(v) > 50 else ""
             if isinstance(v, list):
                 return f"[{inner}{tail}]"
             elif isinstance(v, tuple):
@@ -133,10 +133,10 @@ def safe_repr(v: Any, _depth: int = 0, _seen: set[int] | None = None) -> str:
                 return f"{{{inner}{tail}}}"
         elif _depth < 3 and isinstance(v, dict):
             inner = ", ".join(
-                f"{safe_repr(k, _depth + 1, _seen)[:40]}: {safe_repr(val, _depth + 1, _seen)[:80]}"
-                for k, val in list(v.items())[:20]
+                f"{safe_repr(k, _depth + 1, _seen)[:100]}: {safe_repr(val, _depth + 1, _seen)[:500]}"
+                for k, val in list(v.items())[:50]
             )
-            return "{" + inner + (", ..." if len(v) > 20 else "") + "}"
+            return "{" + inner + (", ..." if len(v) > 50 else "") + "}"
         elif hasattr(v, "done") and hasattr(v, "result") and callable(v.done) and callable(v.result):
             try:
                 if v.done():
@@ -153,14 +153,14 @@ def safe_repr(v: Any, _depth: int = 0, _seen: set[int] | None = None) -> str:
             if _depth < 3:
                 unpacked = _unpack_custom_object(v, _depth, _seen)
                 if unpacked is not None:
-                    return unpacked if len(unpacked) <= 240 else unpacked[:237] + "..."
+                    return unpacked if len(unpacked) <= 4000 else unpacked[:3997] + "..."
 
             r = repr(v)
             if _depth < 2 and _ADDR_RE.match(r):
                 if type(v).__str__ is not object.__str__:
                     return str(v)
                 return f"{type(v).__name__}()"
-            return r if len(r) <= 240 else r[:237] + "..."
+            return r if len(r) <= 4000 else r[:3997] + "..."
     except Exception:
         return "<unprintable>"
 

@@ -34,7 +34,7 @@ def _detailed_value_repr(val: Any) -> dict[str, Any]:
     t_name = type(val).__name__
     try:
         r = repr(val)
-        short_val = r if len(r) <= 120 else r[:117] + "..."
+        short_val = r if len(r) <= 2000 else r[:1997] + "..."
     except Exception:
         short_val = "<unprintable>"
 

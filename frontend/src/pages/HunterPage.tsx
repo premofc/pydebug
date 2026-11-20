@@ -177,12 +177,14 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
   // VS Code-style Resizable Split Pane & Expand/Collapse State
   const [splitRatio, setSplitRatio] = useState<number>(55);
   const [panelViewMode, setPanelViewMode] = useState<'split' | 'full-editor' | 'full-inspector'>('split');
+  const [isDraggingSplitter, setIsDraggingSplitter] = useState(false);
   const isDraggingSplitterRef = useRef(false);
   const mainSplitterRef = useRef<HTMLDivElement>(null);
 
   const handleSplitterMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     isDraggingSplitterRef.current = true;
+    setIsDraggingSplitter(true);
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
 
@@ -197,6 +199,7 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
 
     const onMouseUp = () => {
       isDraggingSplitterRef.current = false;
+      setIsDraggingSplitter(false);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
       window.removeEventListener('mousemove', onMouseMove);
@@ -658,11 +661,11 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors">
-      {/* 1. MAIN 2-PANEL RESIZABLE LAYOUT (pb-28 ensures floating VCR & dock never obscure code) */}
-      <div ref={mainSplitterRef} className="flex-1 flex overflow-hidden relative pb-28">
+      {/* 1. MAIN 2-PANEL RESIZABLE LAYOUT */}
+      <div ref={mainSplitterRef} className="flex-1 flex overflow-hidden relative h-full">
         {/* LEFT PANEL: SOURCE CODE VIEWER WITH LIVE POINTER & INLINE VARIABLES */}
         <div 
-          className="flex flex-col border-r border-slate-200 dark:border-white/[0.08] overflow-hidden bg-white dark:bg-[#060911] transition-all"
+          className={`flex flex-col border-r border-slate-200 dark:border-white/[0.08] overflow-hidden bg-white dark:bg-[#060911] ${isDraggingSplitter ? '' : 'transition-all'}`}
           style={{ 
             width: panelViewMode === 'full-inspector' ? '0%' : panelViewMode === 'full-editor' ? '100%' : `${splitRatio}%`,
             display: panelViewMode === 'full-inspector' ? 'none' : 'flex' 
@@ -750,6 +753,7 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
                   return (
                     <div
                       key={k}
+                      title={`${k}: ${wasChanged && diff.old !== '<unset>' ? `${diff.old} ➔ ` : ''}${v}`}
                       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs shrink-0 border transition-all ${
                         wasChanged
                           ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-100 border-emerald-500/50 shadow-sm ring-1 ring-emerald-500/20'
@@ -760,16 +764,16 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
                         {k}:
                       </span>
                       {wasChanged && diff.old !== '<unset>' && (
-                        <span className="text-[11px] text-slate-400 line-through truncate max-w-[80px]">
+                        <span className="text-[11px] text-slate-400 line-through select-all break-all max-w-[200px] hover:max-w-none transition-all" title={diff.old}>
                           {diff.old}
                         </span>
                       )}
                       {wasChanged && diff.old !== '<unset>' && (
                         <span className="text-emerald-500 text-[10px]">➔</span>
                       )}
-                      <span className={`font-mono font-bold truncate max-w-[180px] ${
+                      <span className={`font-mono font-bold select-all break-all max-w-[650px] hover:max-w-none transition-all ${
                         wasChanged ? 'text-emerald-600 dark:text-emerald-300' : 'text-slate-900 dark:text-slate-100'
-                      }`}>
+                      }`} title={v}>
                         {v}
                       </span>
                       {wasChanged && (
@@ -796,7 +800,7 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
           )}
 
           {/* Code Viewer */}
-          <div className="flex-1 overflow-auto font-mono text-[13px] leading-6 select-text p-2">
+          <div className="flex-1 overflow-auto font-mono text-[13px] leading-6 select-text p-2 pb-24">
             {sourceLines.map((lineText, zeroIdx) => {
               const lineNum = zeroIdx + 1;
               const isCurrentLine = currentEvent?.line === lineNum;
@@ -873,14 +877,15 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
         {panelViewMode === 'split' && (
           <div
             onMouseDown={handleSplitterMouseDown}
+            onDoubleClick={() => setSplitRatio(55)}
             className="resizer-h"
-            title="Drag to resize Editor vs Inspector"
+            title="Drag to resize Editor vs Inspector (Double-click to reset)"
           />
         )}
 
         {/* RIGHT PANEL: RICH VARIABLE INSPECTOR & AI CO-PILOT DOCK */}
         <div 
-          className="flex flex-col bg-slate-50/70 dark:bg-[#090e1a]/90 backdrop-blur-md overflow-hidden select-none shrink-0 border-l border-slate-200 dark:border-white/[0.08] transition-all"
+          className={`flex flex-col bg-slate-50/70 dark:bg-[#090e1a]/90 backdrop-blur-md overflow-hidden select-none shrink-0 border-l border-slate-200 dark:border-white/[0.08] ${isDraggingSplitter ? '' : 'transition-all'}`}
           style={{ 
             width: panelViewMode === 'full-editor' ? '0%' : panelViewMode === 'full-inspector' ? '100%' : `${100 - splitRatio}%`,
             display: panelViewMode === 'full-editor' ? 'none' : 'flex' 
@@ -1589,10 +1594,10 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
         </div>
       </div>
 
-      {/* 2. FLOATING VCR TIMELINE CONTROLLER (Floats at bottom-4) */}
-      <div className="timeline-controller fixed bottom-4 left-1/2 -translate-x-1/2 w-[min(900px,calc(100vw-24px))] max-w-none px-4 py-1.5 rounded-full glass-dock-bottom shadow-2xl flex items-center justify-between gap-4 select-none z-40 border border-slate-200/90 dark:border-white/[0.12] backdrop-blur-xl" aria-label="Timeline playback controls">
+      {/* 2. FLOATING VCR TIMELINE CONTROLLER (Completely transparent container, frosted inner controls) */}
+      <div className="timeline-controller fixed bottom-4 left-1/2 -translate-x-1/2 w-[min(940px,calc(100vw-24px))] max-w-none px-2 py-1 flex items-center justify-between gap-3 select-none z-40 bg-transparent border-0 shadow-none pointer-events-auto" aria-label="Timeline playback controls">
         {/* Play & Step Buttons */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md px-2 py-1 rounded-full border border-slate-200/60 dark:border-white/10 shadow-sm">
           <button
             onClick={handleFirst}
             disabled={currentIdx === 0}
@@ -1659,7 +1664,7 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
           <div className="h-5 w-[1px] bg-slate-200 dark:bg-slate-800 mx-1" />
 
           {/* Speed Selector */}
-          <div className="flex items-center gap-1 bg-slate-100/90 dark:bg-[#050811] p-0.5 rounded-lg border border-slate-200/80 dark:border-white/[0.08] text-[11px] font-mono">
+          <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 backdrop-blur-md p-0.5 rounded-lg border border-slate-200/50 dark:border-white/[0.08] text-[11px] font-mono">
             {[0.5, 1, 2, 4].map((spd) => (
               <button
                 key={spd}
@@ -1677,7 +1682,7 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
         </div>
 
         {/* Center: Timeline Scrubber Bar */}
-        <div className="flex-1 max-w-2xl flex items-center gap-3">
+        <div className="flex-1 max-w-2xl flex items-center gap-3 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md px-3 py-1.5 rounded-full border border-slate-200/60 dark:border-white/10 shadow-sm">
           <input
             aria-label="Execution event position"
             type="range"
@@ -1701,7 +1706,7 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
 
         {/* Right: Current Event Details Badge */}
         {currentEvent && (
-          <div className="hidden lg:flex items-center gap-2 shrink-0">
+          <div className="hidden lg:flex items-center gap-2 shrink-0 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md px-2.5 py-1.5 rounded-full border border-slate-200/60 dark:border-white/10 shadow-sm">
             <span
               className={`px-2 py-0.5 rounded text-[11px] font-mono font-medium border uppercase tracking-wider ${getKindBadge(
                 currentEvent.kind

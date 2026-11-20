@@ -57,9 +57,9 @@ class TestDetailedValueRepr:
         assert m_broken["type"] == "BrokenRepr"
 
     def test_long_value_truncation(self):
-        long_str = "x" * 200
+        long_str = "x" * 2500
         m_long = _detailed_value_repr(long_str)
-        assert len(m_long["val"]) <= 120
+        assert len(m_long["val"]) <= 2000
         assert m_long["val"].endswith("...")
 
 

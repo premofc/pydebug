@@ -435,6 +435,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
               <button
                 type="button"
                 key={`${fn.file_path}-${fn.name}`}
+                title={`${fn.name}() - ${shortFile}:${fn.line}`}
                 className={`func-card gloss-card ${isSelected ? 'border-[var(--primary)] shadow-sm' : ''}`}
                 aria-pressed={isSelected}
                 style={{
