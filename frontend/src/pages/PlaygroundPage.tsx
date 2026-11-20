@@ -244,9 +244,10 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
       const payload: Record<string, unknown> = {
         file_path: selectedFunc.file_path,
         function_name: selectedFunc.name,
+        args: paramValues,
         ...(callArgsStr.trim()
           ? { call_expr: `${selectedFunc.name}(${callArgsStr})` }
-          : { args: {} }),
+          : {}),
       };
 
       const res = await fetch('/api/execute-function', {

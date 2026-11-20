@@ -9,6 +9,7 @@ import pytest
 
 from pydebug.cli import (
     LiveSessionSync,
+    build_parser,
     cmd_install,
     cmd_run,
     cmd_uninstall,
@@ -108,3 +109,29 @@ class TestCliMainParser:
             with patch("pydebug.cli.cmd_serve") as mock_serve:
                 main()
                 mock_serve.assert_called_once()
+
+    def test_parse_run_with_script_flags(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "main.py", "--insurer", "star", "--city", "Chennai", "--dry-run"])
+        assert args.command == "run"
+        assert args.file == "main.py"
+        assert args.script_args == ["--insurer", "star", "--city", "Chennai", "--dry-run"]
+
+    def test_cmd_run_forwards_flags_and_injects_sys_path(self, tmp_path):
+        script = tmp_path / "main.py"
+        script.write_text("import sys\nassert '--insurer' in sys.argv\n", encoding="utf-8")
+
+        args = argparse.Namespace(
+            file=str(script),
+            module=False,
+            port=8899,
+            no_ui=True,
+            no_open=True,
+            script_args=["--insurer", "star", "--city", "Chennai", "--dry-run"],
+        )
+
+        with patch("urllib.request.urlopen"):
+            cmd_run(args)
+
+        assert str(tmp_path) in sys.path
+        assert sys.argv == [str(script), "--insurer", "star", "--city", "Chennai", "--dry-run"]

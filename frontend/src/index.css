@@ -997,36 +997,6 @@ html:not(.dark) ::-webkit-scrollbar-thumb:hover {
 }
 
 /* App chrome refresh: quieter surfaces, clearer hierarchy, real connection state. */
-:root {
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --bg-base: #f4f6fb;
-  --glass-nav: rgba(255, 255, 255, 0.9);
-  --glass-border: rgba(148, 163, 184, 0.22);
-  --bg-surface: rgba(255, 255, 255, 0.94);
-  --bg-card: #fff;
-  --bg-card-hover: #fff;
-  --bg-code: #f5f7fb;
-  --border-subtle: rgba(148, 163, 184, 0.22);
-  --text-tertiary: #64748b;
-  --text-muted: #94a3b8;
-  --primary: #6157e8;
-  --primary-light: #746cf2;
-}
-
-html.dark {
-  --bg-base: #080b12;
-  --glass-nav: rgba(13, 17, 27, 0.94);
-  --glass-border: rgba(148, 163, 184, 0.13);
-  --bg-surface: rgba(17, 22, 34, 0.94);
-  --bg-card: #111622;
-  --bg-card-hover: #151c2b;
-  --bg-code: #0b101a;
-  --border-subtle: rgba(148, 163, 184, 0.13);
-  --text-tertiary: #a0aec0;
-  --text-muted: #718096;
-  --primary: #8178ff;
-  --primary-light: #a49eff;
-}
 
 body {
   background-image:
@@ -1218,48 +1188,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition-duration: 0.01ms !important; }
 }
 
-/* Flowing glass theme: quiet ambient color keeps tracing surfaces in focus. */
-:root {
-  --bg-base: #e9edf5;
-  --glass-nav: rgba(247, 248, 253, 0.96);
-  --glass-border: rgba(85, 105, 145, 0.2);
-  --glass-shadow: 0 18px 50px -30px rgba(36, 43, 67, 0.34);
-  --bg-surface: rgba(240, 243, 250, 0.98);
-  --bg-card: rgba(251, 252, 255, 0.98);
-  --bg-card-hover: #ffffff;
-  --bg-code: rgba(233, 238, 247, 0.98);
-  --border-subtle: rgba(85, 105, 145, 0.2);
-  --border-glow: rgba(83, 111, 198, 0.44);
-  --text-primary: #17233b;
-  --text-secondary: #35445f;
-  --text-tertiary: #4b5c76;
-  --text-muted: #566780;
-  --primary: #5267bd;
-  --primary-light: #4159b1;
-  --primary-subtle: rgba(82, 103, 189, 0.1);
-  --splitter-hover: #45a9cb;
-}
 
-html.dark {
-  --bg-base: #070b16;
-  --glass-nav: rgba(9, 15, 29, 0.97);
-  --glass-border: rgba(163, 194, 232, 0.17);
-  --glass-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.8);
-  --bg-surface: rgba(11, 18, 33, 0.98);
-  --bg-card: rgba(15, 24, 42, 0.98);
-  --bg-card-hover: rgba(21, 33, 55, 0.99);
-  --bg-code: rgba(7, 13, 26, 0.99);
-  --border-subtle: rgba(163, 194, 232, 0.14);
-  --border-glow: rgba(98, 208, 244, 0.43);
-  --text-primary: #eef6ff;
-  --text-secondary: #cad7e9;
-  --text-tertiary: #aebbd0;
-  --text-muted: #8c9ab1;
-  --primary: #5bc9ee;
-  --primary-light: #9be9ff;
-  --primary-subtle: rgba(68, 194, 232, 0.13);
-  --splitter-hover: #6de0fa;
-}
 
 html.dark body { background-color: #050914; }
 .app-shell {

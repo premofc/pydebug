@@ -411,7 +411,12 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
 
       if (e.code === 'Space') {
         e.preventDefault();
-        setIsPlaying((p) => !p);
+        if (!isPlaying && currentIdx >= events.length - 1) {
+          setCurrentIdx(0);
+          setIsPlaying(true);
+        } else {
+          setIsPlaying((p) => !p);
+        }
       } else if (e.code === 'ArrowLeft') {
         e.preventDefault();
         setIsPlaying(false);
@@ -1584,8 +1589,8 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
         </div>
       </div>
 
-      {/* 2. FLOATING VCR TIMELINE CONTROLLER (Floats at bottom-16, directly ABOVE the bottom dock at bottom-3.5) */}
-      <div className="timeline-controller fixed bottom-16 left-1/2 -translate-x-1/2 w-[min(900px,calc(100vw-24px))] max-w-none px-4 py-1.5 rounded-full glass-dock-bottom shadow-2xl flex items-center justify-between gap-4 select-none z-40 border border-slate-200/90 dark:border-white/[0.12] backdrop-blur-xl" aria-label="Timeline playback controls">
+      {/* 2. FLOATING VCR TIMELINE CONTROLLER (Floats at bottom-4) */}
+      <div className="timeline-controller fixed bottom-4 left-1/2 -translate-x-1/2 w-[min(900px,calc(100vw-24px))] max-w-none px-4 py-1.5 rounded-full glass-dock-bottom shadow-2xl flex items-center justify-between gap-4 select-none z-40 border border-slate-200/90 dark:border-white/[0.12] backdrop-blur-xl" aria-label="Timeline playback controls">
         {/* Play & Step Buttons */}
         <div className="flex items-center gap-1.5 shrink-0">
           <button
@@ -1606,7 +1611,14 @@ export const HunterPage: React.FC<HunterPageProps> = ({ session, onEventChange, 
           </button>
 
           <button
-            onClick={() => setIsPlaying((p) => !p)}
+            onClick={() => {
+              if (!isPlaying && currentIdx >= events.length - 1) {
+                setCurrentIdx(0);
+                setIsPlaying(true);
+              } else {
+                setIsPlaying((p) => !p);
+              }
+            }}
             className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 font-semibold text-xs text-white shadow-sm transition-all cursor-pointer ${
               isPlaying
                 ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/30'

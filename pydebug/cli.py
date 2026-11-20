@@ -131,14 +131,19 @@ def cmd_run(args: argparse.Namespace) -> None:
     except Exception:
         pass
 
+    raw_script_args = list(getattr(args, "script_args", []) or [])
+    script_args = raw_script_args[1:] if raw_script_args and raw_script_args[0] == "--" else raw_script_args
+
     if is_module:
         mod_name = args.file
         print(f"⚡ [PyDebug] Tracing module {mod_name} in {cwd} ...")
+        if cwd not in sys.path:
+            sys.path.insert(0, cwd)
         tracer = PyTracer(include_paths=include_paths, exclude_prefixes=cli_excludes)
         syncer = LiveSessionSync(tracer, port=args.port, title=f"Module: {mod_name}")
         syncer.start()
         tracer.start()
-        sys.argv = [mod_name, *args.script_args]
+        sys.argv = [mod_name, *script_args]
         try:
             runpy.run_module(mod_name, run_name="__main__", alter_sys=True)
         finally:
@@ -151,6 +156,10 @@ def cmd_run(args: argparse.Namespace) -> None:
         if not target.exists():
             print(f"Error: file not found: {target}", file=sys.stderr)
             sys.exit(1)
+
+        target_dir = str(target.parent.resolve())
+        if target_dir not in sys.path:
+            sys.path.insert(0, target_dir)
 
         # Pytest test files must be executed through pytest, otherwise only the
         # module import is traced and the actual test functions never run.
@@ -228,12 +237,12 @@ def cmd_run(args: argparse.Namespace) -> None:
                 pass
 
         print(f"⚡ [PyDebug] Tracing {target.name} ...")
-        sys.argv = [str(target), *args.script_args]
+        sys.argv = [str(target), *script_args]
         try:
             if is_test_file:
                 import pytest
                 print(f"✨ [PyDebug] Detected pytest test file - running {target.name} through pytest.main() ...")
-                pytest.main([str(target), "-v", "-s", *args.script_args])
+                pytest.main([str(target), "-v", "-s", *script_args])
             else:
                 runpy.run_path(str(target), run_name="__main__")
         finally:
@@ -313,7 +322,7 @@ def cmd_uninstall(args: argparse.Namespace) -> None:
         print("ℹ️ [PyDebug] No active auto-hooks found to remove.")
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pydebug",
         description="Next-Gen 3D Visual Python Debugger (Hunter + Birdseye hybrid)",
@@ -333,7 +342,7 @@ def main() -> None:
     p_run.add_argument("--port", type=int, default=8899, help="UI port (default: 8899)")
     p_run.add_argument("--no-ui", action="store_true", help="Capture trace without launching browser UI")
     p_run.add_argument("--no-open", action="store_true", help="Do not automatically open browser")
-    p_run.add_argument("script_args", nargs="*", help="Arguments passed to script")
+    p_run.add_argument("script_args", nargs=argparse.REMAINDER, help="Arguments passed to script")
 
     # demo command
     p_demo = subparsers.add_parser("demo", help="Run interactive demo with 3D visualization")
@@ -351,6 +360,11 @@ def main() -> None:
     # uninstall command
     subparsers.add_parser("uninstall", help="Remove global auto-hook")
 
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
     args = parser.parse_args()
 
     if args.command == "run":

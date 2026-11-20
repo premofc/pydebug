@@ -223,7 +223,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectSession, a
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors pb-24">
+    <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#060911] text-slate-900 dark:text-slate-100 transition-colors pb-8">
       {/* Hero with a quiet flowing backdrop for the trace workspace */}
       <div className="dashboard-hero relative overflow-hidden border-b border-slate-200/70 dark:border-white/[0.08] bg-white/80 dark:bg-[#060911]/90 backdrop-blur-md transition-colors">
         <div className="dashboard-flow-scene" aria-hidden="true" />
